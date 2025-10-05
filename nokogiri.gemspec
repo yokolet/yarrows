@@ -315,6 +315,7 @@ Gem::Specification.new do |spec|
 
   spec.files += Dir.glob([
     "lib/nokogiri/jruby/isorelax/isorelax/*/isorelax-*.jar",
+    "lib/nokogiri/jruby/org/jspecify/jspecify/*/jspecify-*.jar",
     "lib/nokogiri/jruby/net/sf/saxon/Saxon-HE/*/Saxon-HE-*.jar",
     "lib/nokogiri/jruby/net/sourceforge/htmlunit/neko-htmlunit/*/neko-htmlunit-*.jar",
     "lib/nokogiri/jruby/nu/validator/jing/*/jing-*.jar",
@@ -342,6 +343,7 @@ Gem::Specification.new do |spec|
     spec.requirements << "jar xalan, xalan, 2.7.3" # https://search.maven.org/artifact/xalan/xalan
     spec.requirements << "jar xerces, xercesImpl, 2.12.2" # https://search.maven.org/artifact/xerces/xercesImpl
     spec.requirements << "jar xml-apis, xml-apis, 1.4.01" # https://search.maven.org/artifact/xml-apis/xml-apis
+    spec.requirements << "jar org.jspecify, jspecify, 1.0.0" # https://central.sonatype.com/artifact/org.jspecify/jspecify
   else
     spec.add_runtime_dependency("mini_portile2", "~> 2.8.2") # keep version in sync with extconf.rb
   end
