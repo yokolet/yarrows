@@ -1,6 +1,7 @@
 package nokogiri.internals.html.internal;
 
 import java.net.MalformedURLException;
+import java.net.URI;
 import java.net.URL;
 import java.util.Arrays;
 import java.util.Collection;
@@ -94,19 +95,18 @@ public final class StringUtil {
         // workaround: java will allow control chars in a path URL and may treat as relative, but Chrome / Firefox will strip and may see as a scheme. Normalize to browser's view.
         baseUrl = stripControlChars(baseUrl); relUrl = stripControlChars(relUrl);
         try {
-            URL base;
-            try {
-                base = new URL(baseUrl);
-            } catch (MalformedURLException e) {
-                // the base is unsuitable, but the attribute/rel may be abs on its own, so try that
-                URL abs = new URL(relUrl);
-                return abs.toExternalForm();
-            }
+          URL base;
+          try {
+            base = URI.create(baseUrl).toURL();
             return resolve(base, relUrl).toExternalForm();
-        } catch (MalformedURLException e) {
-            // it may still be valid, just that Java doesn't have a registered stream handler for it, e.g. tel
-            // we test here vs at start to normalize supported URLs (e.g. HTTP -> http)
-            return validUriScheme.matcher(relUrl).find() ? relUrl : "";
+          } catch (IllegalArgumentException e) {
+            URL abs = URI.create(relUrl).toURL();
+            return abs.toExternalForm();
+          }
+        } catch (MalformedURLException | IllegalArgumentException e) {
+          // it may still be valid, just that Java doesn't have a registered stream handler for it, e.g. tel
+          // we test here vs at start to normalize supported URLs (e.g. HTTP -> http)
+          return validUriScheme.matcher(relUrl).find() ? relUrl : "";
         }
     }
 

@@ -8,6 +8,8 @@ import java.util.List;
  */
 public class ValidationException extends IllegalArgumentException {
 
+    private static final long serialVersionUID = 1L;
+
     public static final String Validator = Validate.class.getName();
 
     public ValidationException(String msg) {
