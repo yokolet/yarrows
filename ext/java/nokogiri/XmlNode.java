@@ -860,7 +860,8 @@ public class XmlNode extends RubyObject
   in_context(ThreadContext context, IRubyObject str, IRubyObject options)
   {
     RubyClass klass;
-    XmlDomParserContext ctx;
+    XmlDomParserContext ctx = null;
+    HtmlDomParserContext htmlCtx = null;
 
     final Ruby runtime = context.runtime;
 
@@ -869,9 +870,9 @@ public class XmlNode extends RubyObject
 
     if (document instanceof Html4Document) {
       klass = getNokogiriClass(runtime, "Nokogiri::HTML4::Document");
-      ctx = new HtmlDomParserContext(runtime, options);
-      ((HtmlDomParserContext) ctx).enableDocumentFragment();
-      ctx.setStringInputSource(context, str, context.nil);
+      htmlCtx = new HtmlDomParserContext(runtime, options);
+      htmlCtx.enableDocumentFragment();
+      htmlCtx.setStringInputSource(context, str, context.nil);
     } else {
       klass = getNokogiriClass(runtime, "Nokogiri::XML::Document");
       ctx = new XmlDomParserContext(runtime, options);
@@ -880,12 +881,12 @@ public class XmlNode extends RubyObject
 
     // TODO: for some reason, document.getEncoding() can be null or nil (don't know why)
     // run `test_parse_with_unparented_html_text_context_node' few times to see this happen
-    if (document instanceof Html4Document && !(document.getEncoding() == null || document.getEncoding().isNil())) {
-      HtmlDomParserContext htmlCtx = (HtmlDomParserContext) ctx;
-      htmlCtx.setEncoding(document.getEncoding().asJavaString());
-    }
+//    if (document instanceof Html4Document && !(document.getEncoding() == null || document.getEncoding().isNil())) {
+//      HtmlDomParserContext htmlCtx = (HtmlDomParserContext) ctx;
+//      htmlCtx.setEncoding(document.getEncoding().asJavaString());
+//    }
 
-    XmlDocument doc = ctx.parse(context, klass, context.nil);
+    XmlDocument doc = ctx != null ? ctx.parse(context, klass, context.nil) : htmlCtx.parse(context, klass, context.nil);
 
     RubyArray<?> documentErrors = getErrors(document);
     RubyArray<?> docErrors = getErrors(doc);
