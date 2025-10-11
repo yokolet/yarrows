@@ -22,6 +22,8 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
     static final String EmptyString = "";
     int siblingIndex;
     org.w3c.dom.Document document;
+    HashMap<String, Object> userData = new HashMap<>();
+    HashMap<String, Object> dataHandlers = new HashMap<>();
 
     /**
      * Default constructor. Doesn't set up base uri, children, or attributes; use with caution.
@@ -176,12 +178,12 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
     }
     public Object getFeature(String feature, String version) { return null; }
     public Object setUserData(String key, Object data, UserDataHandler handler) {
-        // TODO: guess HTML5 doesn't have user data feature
-        return null;
+        userData.put(key, data);
+        dataHandlers.put(key, handler);
+        return data;
     }
     public Object getUserData(String key) {
-        // TODO: same as above. HTML5 doesn't have user data feature
-        return null;
+        return userData.get(key);
     }
 
     /**
