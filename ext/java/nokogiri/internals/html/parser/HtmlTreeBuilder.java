@@ -117,6 +117,7 @@ public class HtmlTreeBuilder extends TreeBuilder {
         if (context != null) {
             final String contextName = context.normalName();
             contextElement = new Element(tagFor(contextName, contextName, defaultNamespace(), settings), baseUri);
+            contextElement.setOwnerDocument(doc);
             if (context.ownerDocument() != null) // quirks setup:
                 doc.quirksMode(context.ownerDocument().quirksMode());
 
@@ -319,10 +320,12 @@ public class HtmlTreeBuilder extends TreeBuilder {
 
         Tag tag = tagFor(startTag.name(), startTag.normalName, namespace,
             forcePreserveCase ? ParseSettings.preserveCase : settings);
-
-        return (tag.normalName().equals("form")) ?
+        Element element = (tag.normalName().equals("form")) ?
             new FormElement(tag, null, attributes) :
             new Element(tag, null, attributes);
+        element.setOwnerDocument(doc);
+
+        return element;
     }
 
     /** Inserts an HTML element for the given tag */
@@ -405,6 +408,7 @@ public class HtmlTreeBuilder extends TreeBuilder {
 
     void insertCommentNode(Token.Comment token) {
         Comment node = new Comment(token.getData());
+        node.setOwnerDocument(doc);
         currentElement().appendChild(node);
         onNodeInserted(node);
     }
@@ -426,6 +430,7 @@ public class HtmlTreeBuilder extends TreeBuilder {
             node = new DataNode(data);
         else
             node = new TextNode(data);
+        node.setOwnerDocument(doc);
         el.appendChild(node); // doesn't use insertNode, because we don't foster these; and will always have a stack.
         onNodeInserted(node);
     }
@@ -940,6 +945,7 @@ public class HtmlTreeBuilder extends TreeBuilder {
             // 8. create new element from element, 9 insert into current node, onto stack
             skip = false; // can only skip increment from 4.
             Element newEl = new Element(tagFor(entry.nodeName(), entry.normalName(), defaultNamespace(), settings), null, entry.attributes().clone());
+            newEl.setOwnerDocument(doc);
             doInsertElement(newEl);
 
             // 10. replace entry with new entry

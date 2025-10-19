@@ -156,6 +156,7 @@ public class XmlTreeBuilder extends TreeBuilder {
         String ns = resolveNamespace(tagName, namespaces);
         Tag tag = tagFor(tagName, startTag.normalName, ns, settings);
         Element el = new Element(tag, null, attributes);
+        el.setOwnerDocument(doc);
         currentElement().appendChild(el);
         push(el);
 
@@ -217,6 +218,7 @@ public class XmlTreeBuilder extends TreeBuilder {
 
     void insertCommentFor(Token.Comment commentToken) {
         Comment comment = new Comment(commentToken.getData());
+        comment.setOwnerDocument(doc);
         insertLeafNode(comment);
     }
 
@@ -226,17 +228,20 @@ public class XmlTreeBuilder extends TreeBuilder {
         if      (token.isCData())                       node = new CDataNode(data);
         else if (currentElement().tag().is(Tag.Data))   node = new DataNode(data);
         else                                            node = new TextNode(data);
+        node.setOwnerDocument(doc);
         insertLeafNode(node);
     }
 
     void insertDoctypeFor(Token.Doctype token) {
         DocumentType doctypeNode = new DocumentType(settings.normalizeTag(token.getName()), token.getPublicIdentifier(), token.getSystemIdentifier());
+        doctypeNode.setOwnerDocument(doc);
         doctypeNode.setPubSysKey(token.getPubSysKey());
         insertLeafNode(doctypeNode);
     }
 
     void insertXmlDeclarationFor(Token.XmlDecl token) {
         XmlDeclaration decl = new XmlDeclaration(token.name(), token.isDeclaration);
+        decl.setOwnerDocument(doc);
         if (token.attributes != null) decl.attributes().addAll(token.attributes);
         insertLeafNode(decl);
     }

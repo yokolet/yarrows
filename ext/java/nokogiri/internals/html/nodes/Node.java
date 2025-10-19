@@ -920,7 +920,7 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
         return this.outerHtml().equals(((Node) o).outerHtml());
     }
 
-    protected void setOwnerDocument(Document ownerDocument) {
+    public void setOwnerDocument(Document ownerDocument) {
         document = ownerDocument;
     }
 
