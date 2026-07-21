@@ -324,6 +324,7 @@ Gem::Specification.new do |spec|
     "lib/nokogiri/jruby/xalan/xalan/*/xalan-*.jar",
     "lib/nokogiri/jruby/xerces/xercesImpl/*/xercesImpl-*.jar",
     "lib/nokogiri/jruby/xml-apis/xml-apis/*/xml-apis-*.jar",
+    "lib/nokogiri/jruby/org/jspecify/jspecify/*/jspecify-*.jar",
   ])
 
   spec.bindir = "bin"
@@ -344,6 +345,7 @@ Gem::Specification.new do |spec|
     spec.requirements << "jar xalan, xalan, 2.7.3" # https://search.maven.org/artifact/xalan/xalan
     spec.requirements << "jar xerces, xercesImpl, 2.12.2" # https://search.maven.org/artifact/xerces/xercesImpl
     spec.requirements << "jar xml-apis, xml-apis, 1.4.01" # https://search.maven.org/artifact/xml-apis/xml-apis
+    spec.requirements << "jar org.jspecify, jspecify, 1.0.0"
   else
     spec.add_runtime_dependency("mini_portile2", "~> 2.8.2") # keep version in sync with extconf.rb
   end

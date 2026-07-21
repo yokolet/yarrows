@@ -13,6 +13,7 @@ rescue LoadError
   require 'xalan/xalan/2.7.3/xalan-2.7.3.jar'
   require 'xerces/xercesImpl/2.12.2/xercesImpl-2.12.2.jar'
   require 'xml-apis/xml-apis/1.4.01/xml-apis-1.4.01.jar'
+  require 'org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar'
 end
 
 if defined? Jars
@@ -27,6 +28,7 @@ if defined? Jars
   require_jar 'xalan', 'xalan', '2.7.3'
   require_jar 'xerces', 'xercesImpl', '2.12.2'
   require_jar 'xml-apis', 'xml-apis', '1.4.01'
+  require_jar 'org.jspecify', 'jspecify', '1.0.0'
 end
 
 module Nokogiri
@@ -42,6 +44,7 @@ module Nokogiri
     "xalan:xalan" => "2.7.3",
     "xerces:xercesImpl" => "2.12.2",
     "xml-apis:xml-apis" => "1.4.01",
+    "org.jspecify:jspecify" => "1.0.0",
   }.freeze
   XERCES_VERSION = JAR_DEPENDENCIES["xerces:xercesImpl"]
   NEKO_VERSION = JAR_DEPENDENCIES["net.sourceforge.htmlunit:neko-htmlunit"]
