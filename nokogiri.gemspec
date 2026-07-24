@@ -159,6 +159,7 @@ Gem::Specification.new do |spec|
     "ext/java/nokogiri/internals/html5/nodes/Attributes.java",
     "ext/java/nokogiri/internals/html5/nodes/Document.java",
     "ext/java/nokogiri/internals/html5/nodes/DocumentType.java",
+    "ext/java/nokogiri/internals/html5/nodes/Element.java",
     "ext/nokogiri/depend",
     "ext/nokogiri/extconf.rb",
     "ext/nokogiri/html4_document.c",
