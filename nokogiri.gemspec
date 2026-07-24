@@ -174,6 +174,7 @@ Gem::Specification.new do |spec|
     "ext/java/nokogiri/internals/html5/nodes/Range.java",
     "ext/java/nokogiri/internals/html5/nodes/TextNode.java",
     "ext/java/nokogiri/internals/html5/nodes/XmlDeclaration.java",
+    "ext/java/nokogiri/internals/html5/parser/CharacterReader.java",
     "ext/nokogiri/depend",
     "ext/nokogiri/extconf.rb",
     "ext/nokogiri/html4_document.c",
