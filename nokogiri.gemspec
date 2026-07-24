@@ -185,6 +185,7 @@ Gem::Specification.new do |spec|
     "ext/java/nokogiri/internals/html5/parser/TagSet.java",
     "ext/java/nokogiri/internals/html5/parser/Token.java",
     "ext/java/nokogiri/internals/html5/parser/TokenData.java",
+    "ext/java/nokogiri/internals/html5/parser/Tokeniser.java",
     "ext/nokogiri/depend",
     "ext/nokogiri/extconf.rb",
     "ext/nokogiri/html4_document.c",
