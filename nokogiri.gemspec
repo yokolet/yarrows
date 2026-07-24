@@ -191,6 +191,7 @@ Gem::Specification.new do |spec|
     "ext/java/nokogiri/internals/html5/parser/TreeBuilder.java",
     "ext/java/nokogiri/internals/html5/parser/XmlTreeBuilder.java",
     "ext/java/nokogiri/internals/html5/select/Collector.java",
+    "ext/java/nokogiri/internals/html5/select/Elements.java",
     "ext/nokogiri/depend",
     "ext/nokogiri/extconf.rb",
     "ext/nokogiri/html4_document.c",
