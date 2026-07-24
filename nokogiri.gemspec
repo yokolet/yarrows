@@ -189,6 +189,7 @@ Gem::Specification.new do |spec|
     "ext/java/nokogiri/internals/html5/parser/TokeniserState.java",
     "ext/java/nokogiri/internals/html5/parser/TokenQueue.java",
     "ext/java/nokogiri/internals/html5/parser/TreeBuilder.java",
+    "ext/java/nokogiri/internals/html5/parser/XmlTreeBuilder.java",
     "ext/nokogiri/depend",
     "ext/nokogiri/extconf.rb",
     "ext/nokogiri/html4_document.c",
