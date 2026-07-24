@@ -179,6 +179,7 @@ Gem::Specification.new do |spec|
     "ext/java/nokogiri/internals/html5/parser/HtmlTreeBuilderState.java",
     "ext/java/nokogiri/internals/html5/parser/ParseError.java",
     "ext/java/nokogiri/internals/html5/parser/ParseErrorList.java",
+    "ext/java/nokogiri/internals/html5/parser/Parser.java",
     "ext/nokogiri/depend",
     "ext/nokogiri/extconf.rb",
     "ext/nokogiri/html4_document.c",
