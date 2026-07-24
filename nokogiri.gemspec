@@ -164,6 +164,7 @@ Gem::Specification.new do |spec|
     "ext/java/nokogiri/internals/html5/nodes/EntitiesData.java",
     "ext/java/nokogiri/internals/html5/nodes/FormElement.java",
     "ext/java/nokogiri/internals/html5/nodes/LeadNode.java",
+    "ext/java/nokogiri/internals/html5/nodes/Node.java",
     "ext/nokogiri/depend",
     "ext/nokogiri/extconf.rb",
     "ext/nokogiri/html4_document.c",
