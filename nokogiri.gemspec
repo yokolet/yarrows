@@ -182,6 +182,7 @@ Gem::Specification.new do |spec|
     "ext/java/nokogiri/internals/html5/parser/Parser.java",
     "ext/java/nokogiri/internals/html5/parser/ParseSettings.java",
     "ext/java/nokogiri/internals/html5/parser/Tag.java",
+    "ext/java/nokogiri/internals/html5/parser/TagSet.java",
     "ext/nokogiri/depend",
     "ext/nokogiri/extconf.rb",
     "ext/nokogiri/html4_document.c",
