@@ -170,6 +170,7 @@ Gem::Specification.new do |spec|
     "ext/java/nokogiri/internals/html5/nodes/Node.java",
     "ext/java/nokogiri/internals/html5/nodes/NodeIterator.java",
     "ext/java/nokogiri/internals/html5/nodes/NodeUtils.java",
+    "ext/java/nokogiri/internals/html5/nodes/Printer.java",
     "ext/nokogiri/depend",
     "ext/nokogiri/extconf.rb",
     "ext/nokogiri/html4_document.c",
