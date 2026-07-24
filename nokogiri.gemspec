@@ -194,6 +194,7 @@ Gem::Specification.new do |spec|
     "ext/java/nokogiri/internals/html5/select/Elements.java",
     "ext/java/nokogiri/internals/html5/select/Evaluator.java",
     "ext/java/nokogiri/internals/html5/select/NodeFilter.java",
+    "ext/java/nokogiri/internals/html5/select/Nodes.java",
     "ext/nokogiri/depend",
     "ext/nokogiri/extconf.rb",
     "ext/nokogiri/html4_document.c",
