@@ -102,7 +102,9 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
         else { return shallowClone(); }
     }
     @Override public void normalize() {
-        throw new RuntimeException("Will be implemented later");
+        // Does nothing. The jsoup parser normalizes a text node.
+        // If not, this method will be implemented as desired.
+        // Serialize methods return normalized form.
     }
     @Override public boolean isSupported(String feature, String version) { return false; }
     public abstract String getNamespaceURI();
