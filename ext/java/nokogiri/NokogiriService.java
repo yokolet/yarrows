@@ -43,6 +43,7 @@ public class NokogiriService implements BasicLibraryService
     nokogiriClassCache.put("Nokogiri::HTML4::Document", (RubyClass)ruby.getClassFromPath("Nokogiri::HTML4::Document"));
     nokogiriClassCache.put("Nokogiri::HTML4::ElementDescription",
                            (RubyClass)ruby.getClassFromPath("Nokogiri::HTML4::ElementDescription"));
+    nokogiriClassCache.put("Nokogiri::HTML5::Document", (RubyClass)ruby.getClassFromPath("Nokogiri::HTML5::Document"));
     nokogiriClassCache.put("Nokogiri::XML::Attr", (RubyClass)ruby.getClassFromPath("Nokogiri::XML::Attr"));
     nokogiriClassCache.put("Nokogiri::XML::Document", (RubyClass)ruby.getClassFromPath("Nokogiri::XML::Document"));
     nokogiriClassCache.put("Nokogiri::XML::DocumentFragment",
@@ -84,11 +85,13 @@ public class NokogiriService implements BasicLibraryService
     RubyModule xmlSaxModule = xmlModule.defineModuleUnder("SAX");
     RubyModule htmlModule = nokogiri.defineModuleUnder("HTML4");
     RubyModule htmlSaxModule = htmlModule.defineModuleUnder("SAX");
+    RubyModule html5Module = nokogiri.defineModuleUnder("HTML5");
     RubyModule xsltModule = nokogiri.defineModuleUnder("XSLT");
 
     createSyntaxErrors(ruby, nokogiri, xmlModule);
     RubyClass xmlNode = createXmlModule(ruby, xmlModule);
     createHtmlModule(ruby, htmlModule);
+    createHtmlModule(ruby, html5Module);
     createDocuments(ruby, xmlModule, htmlModule, xmlNode);
     createSaxModule(ruby, xmlSaxModule, htmlSaxModule);
     createXsltModule(ruby, xsltModule);
@@ -247,6 +250,21 @@ public class NokogiriService implements BasicLibraryService
         return clone;
       } catch (CloneNotSupportedException e) {
         return new Html4Document(runtime, klazz);
+      }
+    }
+  };
+
+  public static final ObjectAllocator HTML5_DOCUMENT_ALLOCATOR = new ObjectAllocator()
+  {
+    private Html5Document html5Document = null;
+    public IRubyObject allocate(Ruby runtime, RubyClass klazz) {
+      if (html5Document == null) { html5Document = new Html5Document(runtime, klazz); }
+      try {
+        Html5Document clone = (Html5Document) html5Document.clone();
+        clone.setMetaClass(klazz);
+        return clone;
+      } catch (CloneNotSupportedException e) {
+        return new Html5Document(runtime, klazz);
       }
     }
   };
