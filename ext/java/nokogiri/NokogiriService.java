@@ -91,8 +91,8 @@ public class NokogiriService implements BasicLibraryService
     createSyntaxErrors(ruby, nokogiri, xmlModule);
     RubyClass xmlNode = createXmlModule(ruby, xmlModule);
     createHtmlModule(ruby, htmlModule);
-    createHtmlModule(ruby, html5Module);
-    createDocuments(ruby, xmlModule, htmlModule, xmlNode);
+    //createHtml5Module(ruby, html5Module);
+    createDocuments(ruby, xmlModule, htmlModule, html5Module, xmlNode);
     createSaxModule(ruby, xmlSaxModule, htmlSaxModule);
     createXsltModule(ruby, xsltModule);
     nokogiri.setInternalVariable("cache", populateNokogiriClassCache(ruby));
@@ -200,15 +200,18 @@ public class NokogiriService implements BasicLibraryService
   }
 
   private void
-  createDocuments(Ruby ruby, RubyModule xmlModule, RubyModule htmlModule, RubyClass node)
+  createDocuments(Ruby ruby, RubyModule xmlModule, RubyModule htmlModule, RubyModule html5Module, RubyClass node)
   {
     // TODO: switch to common undeprecated API when 9.4 adds 10 methods
     RubyClass xmlDocument = xmlModule.defineClassUnder("Document", node, XML_DOCUMENT_ALLOCATOR);
     xmlDocument.defineAnnotatedMethods(XmlDocument.class);
 
     //RubyModule htmlDoc = html.defineOrGetClassUnder("Document", document);
-    RubyModule htmlDocument = htmlModule.defineClassUnder("Document", xmlDocument, HTML_DOCUMENT_ALLOCATOR);
+    RubyClass htmlDocument = htmlModule.defineClassUnder("Document", xmlDocument, HTML_DOCUMENT_ALLOCATOR);
     htmlDocument.defineAnnotatedMethods(Html4Document.class);
+
+    RubyClass html5Document = html5Module.defineClassUnder("Document", htmlDocument, HTML5_DOCUMENT_ALLOCATOR);
+    html5Document.defineAnnotatedMethods(Html5Document.class);
   }
 
   private void

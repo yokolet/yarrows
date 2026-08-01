@@ -19,7 +19,7 @@ import static nokogiri.internals.NokogiriHelpers.getNokogiriClass;
  * @author Yoko Harada <yokolet@gmail.com>
  */
 @JRubyClass(name = "Nokogiri::HTML5::Document", parent = "Nokogiri::HTML4::Document")
-public class Html5Document extends XmlDocument
+public class Html5Document extends Html4Document
 {
   private static final long serialVersionUID = 1L;
 
