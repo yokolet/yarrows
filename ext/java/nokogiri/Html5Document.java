@@ -4,6 +4,7 @@ import nokogiri.internals.Html5ParserContext;
 import nokogiri.internals.HtmlDomParserContext;
 import org.jruby.Ruby;
 import org.jruby.RubyClass;
+import org.jruby.RubyString;
 import org.jruby.anno.JRubyClass;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.runtime.Helpers;
@@ -129,21 +130,34 @@ public class Html5Document extends Html4Document
     return parsed_encoding;
   }
 
-  @JRubyMethod(meta = true, required = 4)
+  @JRubyMethod(meta = true, required = 5)
   public static IRubyObject
-  read_io(ThreadContext context, IRubyObject klass, IRubyObject[] args)
+  parse_io(ThreadContext context, IRubyObject klass, IRubyObject[] args)
   {
-    HtmlDomParserContext ctx = new HtmlDomParserContext(context.runtime, args[2], args[3]);
+    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3]);
     ctx.setIOInputSource(context, args[0], args[1]);
     return ctx.parse(context, (RubyClass) klass, args[1]);
   }
 
-  @JRubyMethod(meta = true, required = 4)
+  @JRubyMethod(meta = true, required = 5)
   public static IRubyObject
-  read_memory(ThreadContext context, IRubyObject klass, IRubyObject[] args)
+  parse_memory(ThreadContext context, IRubyObject klass, IRubyObject[] args)
   {
     Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3]);
     ctx.setStringInputSource(context, args[0], args[1]);
     return ctx.parse(context, (RubyClass) klass, args[1]);
+  }
+
+  @JRubyMethod(rest = true, required = 1, optional = 1)
+  public IRubyObject html_standard_serialize(ThreadContext context, IRubyObject[] args)
+  {
+    XmlDocument xmlDocument = document(context.runtime);
+    if (xmlDocument.getDocument() instanceof nokogiri.internals.html5.nodes.Document)
+    {
+      nokogiri.internals.html5.nodes.Document internalDocument =
+        (nokogiri.internals.html5.nodes.Document) xmlDocument.getDocument();
+      return RubyString.newString(context.runtime, internalDocument.outerHtml());
+    }
+    return RubyString.newString(context.runtime, "");
   }
 }

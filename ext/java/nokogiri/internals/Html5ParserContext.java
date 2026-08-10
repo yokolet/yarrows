@@ -12,6 +12,8 @@ import org.w3c.dom.Document;
 import org.xml.sax.SAXException;
 
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.util.List;
 
 import static nokogiri.internals.NokogiriHelpers.stringOrNil;
@@ -137,17 +139,8 @@ public class Html5ParserContext extends ParserContext
   do_parse() throws SAXException, IOException
   {
     // TODO: figure out how to get base url.
-    Document document = parser.parseInput(getInputSource().getCharacterStream(), "");
-//    if (options.noBlanks) {
-//      List<Node> emptyNodes = new ArrayList<Node>();
-//      findEmptyTexts(parser.getDocument(), emptyNodes);
-//      if (emptyNodes.size() > 0) {
-//        for (Node node : emptyNodes) {
-//          node.getParentNode().removeChild(node);
-//        }
-//      }
-//    }
-    return document;
+    Reader reader = new InputStreamReader(getInputSource().getByteStream(), java_encoding);
+    return parser.parseInput(reader, "");
   }
 
   protected XmlDocument

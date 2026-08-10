@@ -120,7 +120,11 @@ module Nokogiri
             raise ArgumentError, "not a string or IO object"
           end
 
-          do_parse(string_or_io, url, encoding, **options)
+          if Nokogiri.uses_gumbo?
+            do_parse(string_or_io, url, encoding, **options)
+          else
+            do_parse_jruby(string_or_io, url, encoding, **options)
+          end
         end
 
         # Create a new document from an IO object.
@@ -129,7 +133,11 @@ module Nokogiri
         def read_io(io, url_ = nil, encoding_ = nil, url: url_, encoding: encoding_, **options)
           raise ArgumentError, "io object doesn't respond to :read" unless io.respond_to?(:read)
 
-          do_parse(io, url, encoding, **options)
+          if Nokogiri.uses_gumbo?
+            do_parse(io, url, encoding, **options)
+          else
+            do_parse_jruby(io, url, encoding, **options)
+          end
         end
 
         # Create a new document from a String.
@@ -138,7 +146,11 @@ module Nokogiri
         def read_memory(string, url_ = nil, encoding_ = nil, url: url_, encoding: encoding_, **options)
           raise ArgumentError, "string object doesn't respond to :to_str" unless string.respond_to?(:to_str)
 
-          do_parse(string, url, encoding, **options)
+          if Nokogiri.uses_gumbo?
+            do_parse(string, url, encoding, **options)
+          else
+            do_parse_jruby(string, url, encoding, **options)
+          end
         end
 
         private
@@ -153,6 +165,17 @@ module Nokogiri
           doc = Nokogiri::Gumbo.parse(string, url, self, **options)
           doc.encoding = "UTF-8"
           doc
+        end
+
+        def do_parse_jruby(input, url, encoding, **options)
+          options[:max_attributes] ||= 400
+          options[:max_errors] ||= options.delete(:max_parse_errors) || 0
+          options[:max_tree_depth] ||= 400
+
+          if input.respond_to?(:read)
+            return parse_io(input, url, encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
+          end
+          parse_memory(input, url, encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
         end
       end
 

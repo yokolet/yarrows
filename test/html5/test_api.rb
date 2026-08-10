@@ -517,4 +517,4 @@ class TestHtml5API < Nokogiri::TestCase
       end
     end
   end
-end if Nokogiri.uses_gumbo?
+end if Nokogiri.uses_gumbo? || Nokogiri.jruby?
