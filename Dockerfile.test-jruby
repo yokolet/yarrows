@@ -1,0 +1,31 @@
+# This Dockerfile compiles and runs test cases on JRuby 10.1 and OpenJDK 25.
+# It is useful when testing JRuby version of Nokogiri.
+#
+# Install Docker desktop or CLI tool and setup docker.
+# Run the command:  docker build -f Dockerfile.test-jruby .
+#
+# Check log(s) to verify that failures and errors are both 0.
+
+ARG JRUBY_VERSION=10.1-jdk25
+FROM docker.io/library/jruby:$JRUBY_VERSION AS base
+
+# Throw-away build stage to reduce size of final image
+FROM base AS build
+
+WORKDIR /nokogiri
+
+# Copy nokogiri code
+COPY . .
+
+# Install packages needed to install gems
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y build-essential git pkg-config && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+
+# Install gems
+RUN rm Gemfile.lock
+RUN gem install bundler -v '4.0.18' && bundle install
+
+# Compile and test nokogiri
+RUN bundle exec rake compile
+RUN bundle exec rake test
