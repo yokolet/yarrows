@@ -1,0 +1,31 @@
+# This Dockerfile compiles and runs test cases on Ruby 3.4.9
+# It is useful when testing libxml2 and gumbo version of Nokogiri on macOS.
+#
+# Install Docker desktop or CLI tool and setup docker.
+# Run the command:  docker build -f Dockerfile.test-ruby .
+#
+# Check log(s) to verify that failures and errors are both 0.
+
+ARG RUBY_VERSION=3.4.9
+FROM docker.io/library/ruby:$RUBY_VERSION AS base
+
+# Throw-away build stage to reduce size of final image
+FROM base AS build
+
+WORKDIR /nokogiri
+
+# Install packages needed to build gems
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y pkg-config libxml2-dev libxslt-dev && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+
+# Copy nokogiri code
+COPY . .
+
+# Install gems
+RUN rm Gemfile.lock
+RUN gem install bundler -v '4.0.18' && bundle install
+
+# Compile and test nokogiri
+RUN bundle exec rake compile -- --enable-system-libraries
+RUN bundle exec rake test
