@@ -2,7 +2,8 @@
 # It is useful when testing libxml2 and gumbo version of Nokogiri on macOS.
 #
 # Install Docker desktop or CLI tool and setup docker.
-# Run the command:  docker build -f Dockerfile.test-ruby .
+# Run the command:  docker build --no-cache -f Dockerfile.test-ruby -t temp-ruby .
+# Don't omit the last period from the docker command above.
 #
 # Check log(s) to verify that failures and errors are both 0.
 

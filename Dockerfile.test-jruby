@@ -2,7 +2,8 @@
 # It is useful when testing JRuby version of Nokogiri.
 #
 # Install Docker desktop or CLI tool and setup docker.
-# Run the command:  docker build -f Dockerfile.test-jruby .
+# Run the command:  docker build --no-cache -f Dockerfile.test-jruby -t temp-jruby .
+# Don't omit the last period from the docker command above.
 #
 # Check log(s) to verify that failures and errors are both 0.
 
