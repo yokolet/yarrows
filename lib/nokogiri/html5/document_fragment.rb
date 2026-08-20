@@ -78,10 +78,36 @@ module Nokogiri
           context = options.delete(:context)
 
           document = HTML5::Document.new
-          document.encoding = "UTF-8"
-          input = HTML5.read_and_encode(input, encoding)
+          if Nokogiri.uses_gumbo?
+            document.encoding = "UTF-8"
+            input = HTML5.read_and_encode(input, encoding)
+          else
+            input = set_input_encoding(input, encoding)
+            document.encoding = find_document_encoding(input)
+          end
 
           new(document, input, context, options)
+        end
+
+        def set_input_encoding(input, encoding)
+          if input.respond_to?(:read)
+            input.set_encoding(encoding) if encoding && input.respond_to?(:set_encoding)
+            input = input.read
+          end
+          input
+        end
+
+        def find_document_encoding(input)
+          if input.respond_to?(:encoding)
+            encoding = input.encoding
+            if encoding == ::Encoding::ASCII_8BIT
+              "UTF-8"
+            else
+              encoding.name
+            end
+          else
+            "UTF-8"
+          end
         end
       end
 
