@@ -181,15 +181,17 @@ module Nokogiri
         @errors = []
         return self unless input
 
-        input = Nokogiri::HTML5.read_and_encode(input, nil)
-
         context = options.delete(:context) if options.key?(:context)
 
-        options[:max_attributes] ||= Nokogiri::Gumbo::DEFAULT_MAX_ATTRIBUTES
-        options[:max_errors] ||= options.delete(:max_parse_errors) || Nokogiri::Gumbo::DEFAULT_MAX_ERRORS
-        options[:max_tree_depth] ||= Nokogiri::Gumbo::DEFAULT_MAX_TREE_DEPTH
+        if Nokogiri.uses_gumbo?
+          input = Nokogiri::HTML5.read_and_encode(input, nil)
 
-        Nokogiri::Gumbo.fragment(self, input, context, **options)
+          options[:max_attributes] ||= Nokogiri::Gumbo::DEFAULT_MAX_ATTRIBUTES
+          options[:max_errors] ||= options.delete(:max_parse_errors) || Nokogiri::Gumbo::DEFAULT_MAX_ERRORS
+          options[:max_tree_depth] ||= Nokogiri::Gumbo::DEFAULT_MAX_TREE_DEPTH
+
+          Nokogiri::Gumbo.fragment(self, input, context, **options)
+        end
       end
 
       def serialize(options = {}, &block) # :nodoc:
