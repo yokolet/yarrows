@@ -15,10 +15,7 @@ import nokogiri.internals.html5.select.NodeFilter;
 import nokogiri.internals.html5.select.NodeVisitor;
 
 import org.jspecify.annotations.Nullable;
-import org.w3c.dom.Attr;
-import org.w3c.dom.DOMException;
-import org.w3c.dom.NamedNodeMap;
-import org.w3c.dom.TypeInfo;
+import org.w3c.dom.*;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
@@ -111,6 +108,21 @@ public class Element extends Node implements Iterable<Element>, org.w3c.dom.Elem
     @Override public Node getLastChild() { return hasChildNodes() ? childNodes.getLast() : null; }
     @Override public NamedNodeMap getAttributes() { return attributes == null ? Node.EMPTY_MAP : attributes.getDOMAttributes(); }
     @Override public org.w3c.dom.Document getOwnerDocument() { return ownerDocument(); }
+    @Override public Node appendChild(org.w3c.dom.Node newChild) throws DOMException {
+      if (newChild instanceof Element || newChild instanceof LeafNode) {
+        appendChild((Node) newChild);
+        return (Node) newChild;
+      } else if (newChild instanceof org.w3c.dom.Element) {
+        Node node = wrapElement((org.w3c.dom.Element) newChild);
+        appendChild(node);
+        return node;
+      } else if (newChild instanceof org.w3c.dom.CharacterData) {
+        Node node = wrapCharacterData((org.w3c.dom.CharacterData) newChild);
+        appendChild(node);
+        return node;
+      }
+      throw new DOMException(DOMException.HIERARCHY_REQUEST_ERR, "The given node cannot be appended to an Element");
+    }
     @Override public Node cloneNode(boolean deep) {
         if (deep) { return this.clone(); }
         else { return this.shallowClone(); }
@@ -200,6 +212,28 @@ public class Element extends Node implements Iterable<Element>, org.w3c.dom.Elem
             }
         }
         return true;
+    }
+
+    private Element wrapElement(org.w3c.dom.Element element) {
+      Tag tag = new Tag(element.getTagName(), element.getNamespaceURI());
+      NamedNodeMap attrs = element.getAttributes();
+      Attributes attributes = new Attributes();
+      for (int i = 0; i < attrs.getLength(); i++) {
+        attributes.add(attrs.item(i).getNodeName(), attrs.item(i).getNodeValue());
+      }
+      return new Element(tag, element.getBaseURI(), attributes);
+    }
+
+    private LeafNode wrapCharacterData(org.w3c.dom.CharacterData characterData) {
+      String data = characterData.getData();
+      if (characterData instanceof org.w3c.dom.CDATASection) {
+        return new CDataNode(data);
+      } else if (characterData instanceof org.w3c.dom.Comment) {
+        return new Comment(data);
+      } else if (characterData instanceof org.w3c.dom.Text) {
+        return new TextNode(data);
+      }
+      return null;
     }
 
     /**

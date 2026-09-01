@@ -93,9 +93,7 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
         // should call removeChildInner(Node out)
         throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented later");
     }
-    @Override public Node appendChild(org.w3c.dom.Node newChild) throws DOMException {
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented later");
-    }
+    public abstract Node appendChild(org.w3c.dom.Node newChild) throws DOMException;
     @Override public boolean hasChildNodes() { return childNodeSize() > 0; }
     @Override public Node cloneNode(boolean deep) {
         if (deep) { return clone(); }

@@ -32,6 +32,9 @@ public abstract class LeafNode extends Node implements CharacterData {
     @Override public Node getLastChild() { return null; }
     @Override public NamedNodeMap getAttributes() { return null; }
     @Override public org.w3c.dom.Document getOwnerDocument() { return ownerDocument(); }
+    @Override public Node appendChild(org.w3c.dom.Node newChild) throws DOMException {
+      throw new DOMException(DOMException.HIERARCHY_REQUEST_ERR, "CharacterData node is not allowed to have children");
+    }
     @Override public boolean hasChildNodes() { return false; }
     @Override public String getNamespaceURI() { return null; }
     @Override public String getPrefix() { return null; }
