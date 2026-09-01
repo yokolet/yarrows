@@ -161,8 +161,7 @@ public class Html5Document extends Html4Document
   {
     Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3]);
     ctx.setIOInputSource(context, args[0], RubyString.newEmptyString(context.runtime));
-    ctx.parse_fragment(context, (RubyClass) klass, args[1]);
-    return context.runtime.getNil();
+    return ctx.parse_fragment(context, (RubyClass) klass, args[1]);
   }
 
   /*
@@ -178,7 +177,7 @@ public class Html5Document extends Html4Document
   {
     Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3]);
     ctx.setStringInputSource(context, args[0], RubyString.newEmptyString(context.runtime));
-    return context.runtime.getNil();
+    return ctx.parse_fragment(context, (RubyClass) klass, args[1]);
   }
 
   @JRubyMethod(rest = true, required = 1, optional = 1)

@@ -123,7 +123,8 @@ public class Html5ParserContext extends ParserContext
   {
     XmlDocument xmlDoc;
     try {
-      Document doc = do_parse(url.asJavaString());
+      // TODO: figure out how to get and pass base url since url in the argument is not a base url.
+      Document doc = do_parse(null);
       xmlDoc = wrapDocument(context, klass, doc);
       xmlDoc.setUrl(url);
       addErrorsIfNecessary(context, xmlDoc);
@@ -167,14 +168,15 @@ public class Html5ParserContext extends ParserContext
   public XmlNodeSet
   parse_fragment(ThreadContext context, RubyClass klass, IRubyObject base)
   {
-    XmlNodeSet nodeSet;
+    XmlNodeSet xmlNodeSet;
     try {
-      org.w3c.dom.Node node = base.toJava(org.w3c.dom.Node.class);
-      String url = node.getBaseURI();
+      XmlNode xmlNode = (XmlNode)base;
+      org.w3c.dom.Node baseNode = xmlNode.getNode();
+      String url = baseNode.getBaseURI() == null ? "" : baseNode.getBaseURI();
       List<Node> children = do_parse_fragment(url);
-      nodeSet = wrapNodeList(context, klass, node, children);
+      xmlNodeSet = wrapNodeList(context, klass, baseNode, children);
       //addErrorsIfNecessary(context, xmlDoc); // TODO: needs the way to pass errors
-      return nodeSet;
+      return xmlNodeSet;
     } catch (Exception e) {
       // TODO: consider a much better exception handling
       XmlSyntaxError xmlSyntaxError = XmlSyntaxError.createXMLSyntaxError(context.runtime);
@@ -187,15 +189,17 @@ public class Html5ParserContext extends ParserContext
   do_parse_fragment(String url) throws SAXException, IOException
   {
     Reader reader = new InputStreamReader(getInputSource().getByteStream(), java_encoding);
-    return parser.parseFragmentInput(reader, null, url != null ? url : "");
+    return parser.parseFragmentInput(reader, null, url);
   }
 
   private XmlNodeSet
-  wrapNodeList(ThreadContext context, RubyClass klass, org.w3c.dom.Node base, List<Node> children)
+  wrapNodeList(ThreadContext context, RubyClass klass, org.w3c.dom.Node baseNode, List<Node> children)
   {
-    for (Node node : children) {
-      node.setParentNode()
+    IRubyObject[] nodes = new IRubyObject[children.size()];
+    for (int i = 0; i < children.size(); i++) {
+      baseNode.appendChild(children.get(i));
+      nodes[i] = new XmlNode(context.runtime, klass, children.get(i));
     }
-
+    return XmlNodeSet.newNodeSet(context.runtime, nodes);
   }
 }
