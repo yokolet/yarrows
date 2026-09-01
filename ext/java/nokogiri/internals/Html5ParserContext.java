@@ -1,8 +1,8 @@
 package nokogiri.internals;
 
-import nokogiri.Html5Document;
-import nokogiri.XmlDocument;
-import nokogiri.XmlSyntaxError;
+import nokogiri.*;
+import nokogiri.internals.html5.nodes.Element;
+import nokogiri.internals.html5.nodes.Node;
 import nokogiri.internals.html5.parser.Parser;
 import org.jruby.*;
 import org.jruby.runtime.Helpers;
@@ -123,7 +123,7 @@ public class Html5ParserContext extends ParserContext
   {
     XmlDocument xmlDoc;
     try {
-      Document doc = do_parse();
+      Document doc = do_parse(url.asJavaString());
       xmlDoc = wrapDocument(context, klass, doc);
       xmlDoc.setUrl(url);
       addErrorsIfNecessary(context, xmlDoc);
@@ -136,11 +136,10 @@ public class Html5ParserContext extends ParserContext
   }
 
   protected Document
-  do_parse() throws SAXException, IOException
+  do_parse(String url) throws SAXException, IOException
   {
-    // TODO: figure out how to get base url.
     Reader reader = new InputStreamReader(getInputSource().getByteStream(), java_encoding);
-    return parser.parseInput(reader, "");
+    return parser.parseInput(reader, url != null ? url : "");
   }
 
   protected XmlDocument
@@ -163,5 +162,40 @@ public class Html5ParserContext extends ParserContext
     htmlDocument.setEncoding(ruby_encoding);
     htmlDocument.setParsedEncoding(java_encoding);
     return htmlDocument;
+  }
+
+  public XmlNodeSet
+  parse_fragment(ThreadContext context, RubyClass klass, IRubyObject base)
+  {
+    XmlNodeSet nodeSet;
+    try {
+      org.w3c.dom.Node node = base.toJava(org.w3c.dom.Node.class);
+      String url = node.getBaseURI();
+      List<Node> children = do_parse_fragment(url);
+      nodeSet = wrapNodeList(context, klass, node, children);
+      //addErrorsIfNecessary(context, xmlDoc); // TODO: needs the way to pass errors
+      return nodeSet;
+    } catch (Exception e) {
+      // TODO: consider a much better exception handling
+      XmlSyntaxError xmlSyntaxError = XmlSyntaxError.createXMLSyntaxError(context.runtime);
+      xmlSyntaxError.setException(e);
+      throw xmlSyntaxError.toThrowable();
+    }
+  }
+
+  protected List<Node>
+  do_parse_fragment(String url) throws SAXException, IOException
+  {
+    Reader reader = new InputStreamReader(getInputSource().getByteStream(), java_encoding);
+    return parser.parseFragmentInput(reader, null, url != null ? url : "");
+  }
+
+  private XmlNodeSet
+  wrapNodeList(ThreadContext context, RubyClass klass, org.w3c.dom.Node base, List<Node> children)
+  {
+    for (Node node : children) {
+      node.setParentNode()
+    }
+
   }
 }

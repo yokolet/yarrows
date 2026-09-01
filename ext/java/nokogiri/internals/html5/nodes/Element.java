@@ -213,15 +213,16 @@ public class Element extends Node implements Iterable<Element>, org.w3c.dom.Elem
         }
         return true;
     }
-
+    
     private Element wrapElement(org.w3c.dom.Element element) {
-      Tag tag = new Tag(element.getTagName(), element.getNamespaceURI());
+      String namespaceURI = element.getNamespaceURI();
+      Tag tag = new Tag(element.getTagName(), namespaceURI == null ? NamespaceHtml : namespaceURI);
       NamedNodeMap attrs = element.getAttributes();
       Attributes attributes = new Attributes();
       for (int i = 0; i < attrs.getLength(); i++) {
         attributes.add(attrs.item(i).getNodeName(), attrs.item(i).getNodeValue());
       }
-      return new Element(tag, element.getBaseURI(), attributes);
+      return new Element(tag, element.getBaseURI() == null ? "" : element.getBaseURI(), attributes);
     }
 
     private LeafNode wrapCharacterData(org.w3c.dom.CharacterData characterData) {

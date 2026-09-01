@@ -191,6 +191,15 @@ module Nokogiri
           options[:max_tree_depth] ||= Nokogiri::Gumbo::DEFAULT_MAX_TREE_DEPTH
 
           Nokogiri::Gumbo.fragment(self, input, context, **options)
+        else
+          options[:max_attributes] ||= 400
+          options[:max_errors] ||= options.delete(:max_parse_errors) || 0
+          options[:max_tree_depth] ||= 400
+
+          if input.respond_to?(:read)
+            return Nokogiri::HTML5::Document.fragment_from_io(input, context || doc, encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
+          end
+          Nokogiri::HTML5::Document.fragment_from_memory(input, context || doc, encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
         end
       end
 

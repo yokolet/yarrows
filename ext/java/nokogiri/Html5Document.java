@@ -148,6 +148,39 @@ public class Html5Document extends Html4Document
     return ctx.parse(context, (RubyClass) klass, args[1]);
   }
 
+  /*
+  args[0] : input
+  args[1] : context node || document
+  args[2] : encoding
+  args[3] : ParseOptions::DEFAULT_HTML
+  args[4] : options in Hash
+ */
+  @JRubyMethod(meta = true, required = 5)
+  public static IRubyObject
+  fragment_from_io(ThreadContext context, IRubyObject klass, IRubyObject[] args)
+  {
+    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3]);
+    ctx.setIOInputSource(context, args[0], RubyString.newEmptyString(context.runtime));
+    ctx.parse_fragment(context, (RubyClass) klass, args[1]);
+    return context.runtime.getNil();
+  }
+
+  /*
+  args[0] : input
+  args[1] : context node || document
+  args[2] : encoding
+  args[3] : ParseOptions::DEFAULT_HTML
+  args[4] : options in Hash
+   */
+  @JRubyMethod(meta = true, required = 5)
+  public static IRubyObject
+  fragment_from_memory(ThreadContext context, IRubyObject klass, IRubyObject[] args)
+  {
+    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3]);
+    ctx.setStringInputSource(context, args[0], RubyString.newEmptyString(context.runtime));
+    return context.runtime.getNil();
+  }
+
   @JRubyMethod(rest = true, required = 1, optional = 1)
   public IRubyObject html_standard_serialize(ThreadContext context, IRubyObject[] args)
   {
