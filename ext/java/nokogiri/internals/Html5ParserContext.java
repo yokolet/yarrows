@@ -174,7 +174,7 @@ public class Html5ParserContext extends ParserContext
       org.w3c.dom.Node baseNode = xmlNode.getNode();
       String url = baseNode.getBaseURI() == null ? "" : baseNode.getBaseURI();
       List<Node> children = do_parse_fragment(url);
-      xmlNodeSet = wrapNodeList(context, klass, baseNode, children);
+      xmlNodeSet = wrapNodeList(context, klass, children);
       //addErrorsIfNecessary(context, xmlDoc); // TODO: needs the way to pass errors
       return xmlNodeSet;
     } catch (Exception e) {
@@ -193,11 +193,10 @@ public class Html5ParserContext extends ParserContext
   }
 
   private XmlNodeSet
-  wrapNodeList(ThreadContext context, RubyClass klass, org.w3c.dom.Node baseNode, List<Node> children)
+  wrapNodeList(ThreadContext context, RubyClass klass, List<Node> children)
   {
     IRubyObject[] nodes = new IRubyObject[children.size()];
     for (int i = 0; i < children.size(); i++) {
-      baseNode.appendChild(children.get(i));
       nodes[i] = new XmlNode(context.runtime, klass, children.get(i));
     }
     return XmlNodeSet.newNodeSet(context.runtime, nodes);

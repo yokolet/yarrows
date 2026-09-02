@@ -306,6 +306,27 @@ module Nokogiri
         string
       end
 
+      def set_input_encoding(input, encoding)
+        if input.respond_to?(:read)
+          input.set_encoding(encoding) if encoding && input.respond_to?(:set_encoding)
+          input = input.read
+        end
+        input
+      end if Nokogiri.jruby?
+
+      def find_document_encoding(input)
+        if input.respond_to?(:encoding)
+          encoding = input.encoding
+          if encoding == ::Encoding::ASCII_8BIT
+            "UTF-8"
+          else
+            encoding.name
+          end
+        else
+          "UTF-8"
+        end
+      end if Nokogiri.jruby?
+
       private
 
       # Charset sniffing is a complex and controversial topic that understandably isn't done _by

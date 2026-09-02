@@ -82,32 +82,11 @@ module Nokogiri
             document.encoding = "UTF-8"
             input = HTML5.read_and_encode(input, encoding)
           else
-            input = set_input_encoding(input, encoding)
-            document.encoding = find_document_encoding(input)
+            input = HTML5.set_input_encoding(input, encoding)
+            document.encoding = HTML5.find_document_encoding(input)
           end
 
           new(document, input, context, options)
-        end
-
-        def set_input_encoding(input, encoding)
-          if input.respond_to?(:read)
-            input.set_encoding(encoding) if encoding && input.respond_to?(:set_encoding)
-            input = input.read
-          end
-          input
-        end
-
-        def find_document_encoding(input)
-          if input.respond_to?(:encoding)
-            encoding = input.encoding
-            if encoding == ::Encoding::ASCII_8BIT
-              "UTF-8"
-            else
-              encoding.name
-            end
-          else
-            "UTF-8"
-          end
         end
       end
 
@@ -197,9 +176,9 @@ module Nokogiri
           options[:max_tree_depth] ||= 400
 
           if input.respond_to?(:read)
-            return Nokogiri::HTML5::Document.fragment_from_io(input, context || doc, encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
+            return Nokogiri::HTML5::Document.fragment_from_io(input, context || doc, doc.encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
           end
-          Nokogiri::HTML5::Document.fragment_from_memory(input, context || doc, encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
+          Nokogiri::HTML5::Document.fragment_from_memory(input, context || doc, doc.encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
         end
       end
 
