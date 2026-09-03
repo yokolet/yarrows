@@ -123,10 +123,11 @@ public class Html5ParserContext extends ParserContext
   {
     XmlDocument xmlDoc;
     try {
-      // TODO: figure out how to get and pass base url since url in the argument is not a base url.
-      Document doc = do_parse(null);
+      Document doc = do_parse();
       xmlDoc = wrapDocument(context, klass, doc);
+      System.out.println("Html5PraserContext.parse(): url=" + url);
       xmlDoc.setUrl(url);
+      if (!url.isNil()) { xmlDoc.setInstanceVariable("@url", url); }
       addErrorsIfNecessary(context, xmlDoc);
       return xmlDoc;
     } catch (SAXException e) {
@@ -137,9 +138,10 @@ public class Html5ParserContext extends ParserContext
   }
 
   protected Document
-  do_parse(String url) throws SAXException, IOException
+  do_parse() throws SAXException, IOException
   {
     Reader reader = new InputStreamReader(getInputSource().getByteStream(), java_encoding);
+    String url = getInputSource().getSystemId();
     return parser.parseInput(reader, url != null ? url : "");
   }
 

@@ -130,6 +130,13 @@ public class Html5Document extends Html4Document
     return parsed_encoding;
   }
 
+  /*
+  args[0] : input
+  args[1] : url
+  args[2] : encoding
+  args[3] : ParseOptions::DEFAULT_HTML
+  args[4] : options in Hash
+  */
   @JRubyMethod(meta = true, required = 5)
   public static IRubyObject
   parse_io(ThreadContext context, IRubyObject klass, IRubyObject[] args)
@@ -139,6 +146,13 @@ public class Html5Document extends Html4Document
     return ctx.parse(context, (RubyClass) klass, args[1]);
   }
 
+  /*
+  args[0] : input
+  args[1] : url
+  args[2] : encoding
+  args[3] : ParseOptions::DEFAULT_HTML
+  args[4] : options in Hash
+  */
   @JRubyMethod(meta = true, required = 5)
   public static IRubyObject
   parse_memory(ThreadContext context, IRubyObject klass, IRubyObject[] args)
