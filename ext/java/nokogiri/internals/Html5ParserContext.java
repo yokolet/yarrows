@@ -3,11 +3,14 @@ package nokogiri.internals;
 import nokogiri.*;
 import nokogiri.internals.html5.nodes.Element;
 import nokogiri.internals.html5.nodes.Node;
+import nokogiri.internals.html5.parser.ParseError;
+import nokogiri.internals.html5.parser.ParseErrorList;
 import nokogiri.internals.html5.parser.Parser;
 import org.jruby.*;
 import org.jruby.runtime.Helpers;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
+import org.w3c.dom.DOMException;
 import org.w3c.dom.Document;
 import org.xml.sax.SAXException;
 
@@ -74,19 +77,28 @@ public class Html5ParserContext extends ParserContext
   public void
   addErrorsIfNecessary(ThreadContext context, XmlDocument doc)
   {
-    doc.setInstanceVariable("@errors", mapErrors(context, errorHandler));
+    doc.setInstanceVariable("@errors", mapErrors(context, errorHandler, parser));
   }
 
   public static RubyArray<?>
-  mapErrors(ThreadContext context, NokogiriErrorHandler errorHandler)
+  mapErrors(ThreadContext context, NokogiriErrorHandler errorHandler, Parser parser)
   {
     final Ruby runtime = context.runtime;
     final List<RubyException> errors = errorHandler.getErrors();
+    mapParseErrors(runtime, parser, errors);
     final IRubyObject[] errorsAry = new IRubyObject[errors.size()];
     for (int i = 0; i < errors.size(); i++) {
       errorsAry[i] = errors.get(i);
     }
     return runtime.newArrayNoCopy(errorsAry);
+  }
+
+  private static void mapParseErrors(Ruby runtime, Parser parser, List<RubyException> errors) {
+    ParseErrorList errorList = parser.getErrors();
+    for (ParseError error : errorList) {
+      XmlSyntaxError rubyError = XmlSyntaxError.createXMLSyntaxError(runtime, new RuntimeException(error.getErrorMessage()));
+      errors.add(rubyError);
+    }
   }
 
   public XmlDocument
@@ -125,7 +137,6 @@ public class Html5ParserContext extends ParserContext
     try {
       Document doc = do_parse();
       xmlDoc = wrapDocument(context, klass, doc);
-      System.out.println("Html5PraserContext.parse(): url=" + url);
       xmlDoc.setUrl(url);
       if (!url.isNil()) { xmlDoc.setInstanceVariable("@url", url); }
       addErrorsIfNecessary(context, xmlDoc);

@@ -58,7 +58,31 @@ class TestHtml5API < Nokogiri::TestCase
 
     doc = Nokogiri::HTML5(html, url: url, max_errors: 1)
     assert_equal(url, doc.errors[0].file)
-  end
+  end if Nokogiri.uses_gumbo?
+
+  def test_url
+    html = "<p>hi"
+    url = "http://example.com"
+
+    doc = Nokogiri::HTML5::Document.parse(html)
+    assert_nil(doc.url)
+
+    doc = Nokogiri::HTML5::Document.parse(html, nil)
+    assert_nil(doc.url)
+
+    doc = Nokogiri::HTML5::Document.parse(html, url)
+    assert_equal(url, doc.url)
+
+    # with keyword args
+    doc = Nokogiri::HTML5::Document.parse(html, url: nil)
+    assert_nil(doc.url)
+
+    doc = Nokogiri::HTML5::Document.parse(html, url: url)
+    assert_equal(url, doc.url)
+
+    doc = Nokogiri::HTML5::Document.parse(html, url, max_errors: 1)
+    assert_equal(0, doc.errors.size)
+  end if Nokogiri.jruby?
 
   def test_parse_encoding
     utf8 = "<!DOCTYPE html><body><p>おはようございます"
