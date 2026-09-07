@@ -10,10 +10,7 @@ import java.io.Serializable;
 import java.net.URI;
 import java.util.concurrent.Callable;
 
-import org.jruby.Ruby;
-import org.jruby.RubyClass;
-import org.jruby.RubyObject;
-import org.jruby.RubyString;
+import org.jruby.*;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
@@ -274,6 +271,26 @@ public abstract class ParserContext extends RubyObject
           return source;
       }
   } */
+
+  public static class Settings implements Serializable
+  {
+    private static final long serialVersionUID = 1L;
+    public long maxErrors;
+    public long maxTreeDepth;
+    public long maxAttributes;
+    public boolean parseNoscriptContentAsText = false;
+
+    public Settings(RubyHash settings) {
+      RubySymbol key = RubySymbol.newSymbol(settings.getRuntime(), "max_errors");
+      if (settings.containsKey(key)) { maxErrors = (Long) settings.get(key); }
+      key = RubySymbol.newSymbol(settings.getRuntime(), "max_tree_depth");
+      if (settings.containsKey(key)) { maxTreeDepth = (Long) settings.get(key); }
+      key = RubySymbol.newSymbol(settings.getRuntime(), "max_attributes");
+      if (settings.containsKey(key)) { maxAttributes = (Long) settings.get(key); }
+      key = RubySymbol.newSymbol(settings.getRuntime(), "parse_noscript_content_as_text");
+      if (settings.containsKey(key)) { parseNoscriptContentAsText = (Boolean) settings.get(key); }
+    }
+  }
 
   public static abstract class ParserTask<T extends ParserContext> implements Callable<T>
   {

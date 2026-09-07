@@ -61,7 +61,7 @@ class TestHtml5API < Nokogiri::TestCase
   end if Nokogiri.uses_gumbo?
 
   def test_url
-    html = "<p>hi"
+    html = "<ruby><div><rp>Hello"
     url = "http://example.com"
 
     doc = Nokogiri::HTML5::Document.parse(html)
@@ -72,6 +72,20 @@ class TestHtml5API < Nokogiri::TestCase
 
     doc = Nokogiri::HTML5::Document.parse(html, url)
     assert_equal(url, doc.url)
+    assert_equal(0, doc.errors.size)
+
+    doc = Nokogiri::HTML5::Document.parse(html, url, max_errors: 1)
+    assert_equal(1, doc.errors.size)
+    assert_equal(url, doc.errors[0].file)
+
+    doc = Nokogiri::HTML5::Document.parse(html, url, max_errors: 100)
+    assert_equal(2, doc.errors.size)
+
+    doc = Nokogiri::HTML5.parse(html, url, max_errors: 1)
+    assert_equal(url, doc.errors[0].file)
+
+    doc = Nokogiri::HTML5(html, url, max_errors: 1)
+    assert_equal(url, doc.errors[0].file)
 
     # with keyword args
     doc = Nokogiri::HTML5::Document.parse(html, url: nil)
@@ -80,8 +94,14 @@ class TestHtml5API < Nokogiri::TestCase
     doc = Nokogiri::HTML5::Document.parse(html, url: url)
     assert_equal(url, doc.url)
 
-    doc = Nokogiri::HTML5::Document.parse(html, url, max_errors: 1)
-    assert_equal(0, doc.errors.size)
+    doc = Nokogiri::HTML5::Document.parse(html, url: url, max_errors: 1)
+    assert_equal(url, doc.errors[0].file)
+
+    doc = Nokogiri::HTML5.parse(html, url: url, max_errors: 1)
+    assert_equal(url, doc.errors[0].file)
+
+    doc = Nokogiri::HTML5(html, url: url, max_errors: 1)
+    assert_equal(url, doc.errors[0].file)
   end if Nokogiri.jruby?
 
   def test_parse_encoding

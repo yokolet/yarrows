@@ -1,7 +1,6 @@
 package nokogiri.internals;
 
 import nokogiri.*;
-import nokogiri.internals.html5.nodes.Element;
 import nokogiri.internals.html5.nodes.Node;
 import nokogiri.internals.html5.parser.ParseError;
 import nokogiri.internals.html5.parser.ParseErrorList;
@@ -10,7 +9,6 @@ import org.jruby.*;
 import org.jruby.runtime.Helpers;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
-import org.w3c.dom.DOMException;
 import org.w3c.dom.Document;
 import org.xml.sax.SAXException;
 
@@ -30,19 +28,21 @@ public class Html5ParserContext extends ParserContext
 {
   private static final long serialVersionUID = 1L;
   protected ParserContext.Options options;
+  protected ParserContext.Settings settings;
   protected transient NokogiriErrorHandler errorHandler;
   protected transient Parser parser;
   protected transient IRubyObject ruby_encoding;
 
-  public Html5ParserContext(Ruby runtime, IRubyObject options)
+  public Html5ParserContext(Ruby runtime, IRubyObject options, IRubyObject settings)
   {
-    this(runtime, runtime.getNil(), options);
+    this(runtime, runtime.getNil(), options, settings);
   }
 
-  public Html5ParserContext(Ruby runtime, IRubyObject encoding, IRubyObject options)
+  public Html5ParserContext(Ruby runtime, IRubyObject encoding, IRubyObject options,  IRubyObject settings)
   {
     super(runtime);
     this.options = new ParserContext.Options(RubyFixnum.fix2long(options));
+    this.settings = new ParserContext.Settings(settings.toJava(RubyHash.class));
     java_encoding = NokogiriHelpers.getValidEncodingOrNull(encoding);
     ruby_encoding = encoding;
     initErrorHandler(runtime);
@@ -64,7 +64,7 @@ public class Html5ParserContext extends ParserContext
   {
     parser = Parser.htmlParser();
     parser.setTrackPosition(true);
-    parser.setTrackErrors(100);
+    parser.setTrackErrors((int)settings.maxErrors);
   }
 
   @Override
@@ -77,15 +77,15 @@ public class Html5ParserContext extends ParserContext
   public void
   addErrorsIfNecessary(ThreadContext context, XmlDocument doc)
   {
-    doc.setInstanceVariable("@errors", mapErrors(context, errorHandler, parser));
+    doc.setInstanceVariable("@errors", mapErrors(context, errorHandler, parser, doc.getDocument().getBaseURI()));
   }
 
   public static RubyArray<?>
-  mapErrors(ThreadContext context, NokogiriErrorHandler errorHandler, Parser parser)
+  mapErrors(ThreadContext context, NokogiriErrorHandler errorHandler, Parser parser, String baseURI)
   {
     final Ruby runtime = context.runtime;
     final List<RubyException> errors = errorHandler.getErrors();
-    mapParseErrors(runtime, parser, errors);
+    appendParseErrors(runtime, parser, errors, baseURI);
     final IRubyObject[] errorsAry = new IRubyObject[errors.size()];
     for (int i = 0; i < errors.size(); i++) {
       errorsAry[i] = errors.get(i);
@@ -93,10 +93,11 @@ public class Html5ParserContext extends ParserContext
     return runtime.newArrayNoCopy(errorsAry);
   }
 
-  private static void mapParseErrors(Ruby runtime, Parser parser, List<RubyException> errors) {
+  private static void appendParseErrors(Ruby runtime, Parser parser, List<RubyException> errors, String baseURI) {
     ParseErrorList errorList = parser.getErrors();
     for (ParseError error : errorList) {
       XmlSyntaxError rubyError = XmlSyntaxError.createXMLSyntaxError(runtime, new RuntimeException(error.getErrorMessage()));
+      rubyError.setInstanceVariable("@file", RubyString.newString(runtime, baseURI));
       errors.add(rubyError);
     }
   }

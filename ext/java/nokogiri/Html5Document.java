@@ -1,7 +1,6 @@
 package nokogiri;
 
 import nokogiri.internals.Html5ParserContext;
-import nokogiri.internals.HtmlDomParserContext;
 import org.jruby.Ruby;
 import org.jruby.RubyClass;
 import org.jruby.RubyString;
@@ -141,7 +140,7 @@ public class Html5Document extends Html4Document
   public static IRubyObject
   parse_io(ThreadContext context, IRubyObject klass, IRubyObject[] args)
   {
-    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3]);
+    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3], args[4]);
     ctx.setIOInputSource(context, args[0], args[1]);
     return ctx.parse(context, (RubyClass) klass, args[1]);
   }
@@ -157,7 +156,7 @@ public class Html5Document extends Html4Document
   public static IRubyObject
   parse_memory(ThreadContext context, IRubyObject klass, IRubyObject[] args)
   {
-    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3]);
+    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3], args[4]);
     ctx.setStringInputSource(context, args[0], args[1]);
     return ctx.parse(context, (RubyClass) klass, args[1]);
   }
@@ -173,7 +172,7 @@ public class Html5Document extends Html4Document
   public static IRubyObject
   fragment_from_io(ThreadContext context, IRubyObject klass, IRubyObject[] args)
   {
-    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3]);
+    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3], args[4]);
     ctx.setIOInputSource(context, args[0], RubyString.newEmptyString(context.runtime));
     return ctx.parse_fragment(context, (RubyClass) klass, args[1]);
   }
@@ -189,7 +188,7 @@ public class Html5Document extends Html4Document
   public static IRubyObject
   fragment_from_memory(ThreadContext context, IRubyObject klass, IRubyObject[] args)
   {
-    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3]);
+    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3], args[4]);
     ctx.setStringInputSource(context, args[0], RubyString.newEmptyString(context.runtime));
     return ctx.parse_fragment(context, (RubyClass) klass, args[1]);
   }
