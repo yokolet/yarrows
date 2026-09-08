@@ -104,6 +104,40 @@ public abstract class ParserContext extends RubyObject
   }
 
   public void
+  setStringInputSourceHtml5(ThreadContext context, IRubyObject data, IRubyObject url, IRubyObject encoding)
+  {
+    source = new InputSource();
+    ParserContext.setUrl(context, source, url);
+
+    Ruby ruby = context.getRuntime();
+
+    if (data.isNil()) {
+      throw ruby.newTypeError("wrong argument type nil (expected String)");
+    }
+    if (!(data instanceof RubyString)) {
+      throw ruby.newTypeError("wrong argument type " + data.getMetaClass() + " (expected String)");
+    }
+
+    RubyString stringData = (RubyString) data;
+
+    if (stringData.encoding(context) != null) {
+      RubyString stringEncoding = stringData.encoding(context).asString();
+      String encName = NokogiriHelpers.getValidEncodingOrNull(stringEncoding);
+      if (java_encoding != null && !java_encoding.equals(encName)) {
+        stringData.force_encoding(context, encoding);
+      }
+      if (java_encoding == null) { java_encoding = encName; }
+    }
+
+    ByteList bytes = stringData.getByteList();
+
+    stringDataSize = bytes.length() - bytes.begin();
+    ByteArrayInputStream stream = new ByteArrayInputStream(bytes.unsafeBytes(), bytes.begin(), bytes.length());
+    source.setByteStream(stream);
+    source.setEncoding(java_encoding);
+  }
+
+  public void
   setStringInputSourceNoEnc(ThreadContext context, IRubyObject data, IRubyObject url)
   {
     source = new InputSource();

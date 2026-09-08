@@ -1,6 +1,7 @@
 package nokogiri.internals;
 
 import nokogiri.*;
+import nokogiri.internals.html5.nodes.Document;
 import nokogiri.internals.html5.nodes.Node;
 import nokogiri.internals.html5.parser.ParseError;
 import nokogiri.internals.html5.parser.ParseErrorList;
@@ -9,12 +10,13 @@ import org.jruby.*;
 import org.jruby.runtime.Helpers;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
-import org.w3c.dom.Document;
 import org.xml.sax.SAXException;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static nokogiri.internals.NokogiriHelpers.stringOrNil;
@@ -137,6 +139,7 @@ public class Html5ParserContext extends ParserContext
     XmlDocument xmlDoc;
     try {
       Document doc = do_parse();
+      doc.outputSettings().charset(StandardCharsets.UTF_8);
       xmlDoc = wrapDocument(context, klass, doc);
       xmlDoc.setUrl(url);
       if (!url.isNil()) { xmlDoc.setInstanceVariable("@url", url); }
@@ -174,7 +177,6 @@ public class Html5ParserContext extends ParserContext
         ruby_encoding = stringOrNil(context.runtime, charset);
       }
     }
-    htmlDocument.setEncoding(ruby_encoding);
     htmlDocument.setParsedEncoding(java_encoding);
     return htmlDocument;
   }

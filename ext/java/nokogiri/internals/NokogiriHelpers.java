@@ -12,10 +12,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.jruby.Ruby;
-import org.jruby.RubyArray;
-import org.jruby.RubyClass;
-import org.jruby.RubyString;
+import org.jruby.*;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
@@ -670,9 +667,17 @@ public class NokogiriHelpers
   getValidEncodingOrNull(IRubyObject encoding)
   {
     if (encoding.isNil()) { return null; } // charsetNames does not like contains(null)
-    String enc = rubyStringToString(encoding.convertToString());
+    String enc = null;
+    if (encoding instanceof RubyString) { enc = rubyStringToString(encoding.convertToString()); }
+    else if (encoding instanceof RubyEncoding) {
+      IRubyObject name = ((RubyEncoding) encoding).callMethod("name");
+      enc = rubyStringToString(name);
+    } else {
+      return null;
+    }
     if (CharsetNames.contains(enc)) { return enc; }
-    return null;
+    else if (enc.equals("ASCII-8BIT")) { return "US-ASCII"; }
+    else { return null; }
   }
 
   public static String

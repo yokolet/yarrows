@@ -173,9 +173,12 @@ module Nokogiri
           options[:max_tree_depth] ||= 400
 
           if input.respond_to?(:read)
-            return parse_io(input, url, encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
+            doc = parse_io(input, url, encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
+          else
+            doc = parse_memory(input, url, encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
           end
-          parse_memory(input, url, encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
+          doc.encoding = "UTF-8"
+          doc
         end
       end
 

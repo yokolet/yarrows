@@ -157,7 +157,7 @@ public class Html5Document extends Html4Document
   parse_memory(ThreadContext context, IRubyObject klass, IRubyObject[] args)
   {
     Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3], args[4]);
-    ctx.setStringInputSource(context, args[0], args[1]);
+    ctx.setStringInputSourceHtml5(context, args[0], args[1], args[2]);
     return ctx.parse(context, (RubyClass) klass, args[1]);
   }
 
