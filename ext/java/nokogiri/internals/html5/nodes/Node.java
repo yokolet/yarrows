@@ -39,6 +39,7 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
     // org.w3c.dom
     private HashMap<String, Object> userdata;
     protected Document ownerDocument = null;
+    protected org.w3c.dom.Node foreignNode = null;
 
     /**
      * Default constructor. Doesn't set up base uri, children, or attributes; use with caution.
@@ -90,8 +91,11 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
         throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented later");
     }
     @Override public Node removeChild(org.w3c.dom.Node oldChild) throws DOMException {
-        // should call removeChildInner(Node out)
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented later");
+        if (oldChild.getNodeType() == org.w3c.dom.Node.DOCUMENT_NODE) {
+          throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document node cannot be removed");
+        }
+        removeChildInner((Node)oldChild);
+        return (Node)oldChild;
     }
     public abstract Node appendChild(org.w3c.dom.Node newChild) throws DOMException;
     @Override public boolean hasChildNodes() { return childNodeSize() > 0; }
@@ -149,7 +153,8 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
         throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented later");
     }
     @Override public boolean isSameNode(org.w3c.dom.Node other) {
-        return this == other;
+      if (foreignNode == null || other instanceof Node) { return this == other; }
+      else { return foreignNode == other; }
     }
     public abstract String lookupPrefix(String namespaceURI);
     public abstract boolean isDefaultNamespace(String namespaceURI);
@@ -1077,7 +1082,9 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
     @Override
     public boolean equals(@Nullable Object o) {
         // implemented just so that javadoc is clear this is an identity test
-        return this == o;
+      if (this == o)  return true;
+      if (foreignNode == o)  return true;
+      return false;
     }
 
     /**

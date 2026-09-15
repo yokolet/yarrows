@@ -35,6 +35,8 @@ public class Attribute implements Cloneable, Attr  {
     @Nullable private String val;
     @Nullable Attributes parent; // used to update the holding Attributes when the key / value is changed via this interface
     private HashMap<String, Object> userdata;
+    private Document ownerDocument = null;
+    private boolean specified = false;
 
     /**
      * Create a new attribute from unencoded (raw) key and value.
@@ -59,6 +61,7 @@ public class Attribute implements Cloneable, Attr  {
         this.key = key;
         this.val = val;
         this.parent = parent;
+        this.specified = val != null && val.length() > 0;
     }
 
     // org.w3c.dom.TypeInfo implementation
@@ -80,7 +83,19 @@ public class Attribute implements Cloneable, Attr  {
     @Override public Node getPreviousSibling() { return null; }
     @Override public Node getNextSibling() { return null; }
     @Override public NamedNodeMap getAttributes() { return null; };
-    @Override public org.w3c.dom.Document getOwnerDocument() { return parent != null ? parent.ownerElement.getOwnerDocument() : null;  }
+    @Override public org.w3c.dom.Document getOwnerDocument() {
+      if (ownerDocument != null) {
+        return ownerDocument;
+      } else if (parent != null && parent.ownerElement != null) {
+        ownerDocument = (Document) parent.ownerElement.getOwnerDocument();
+        return ownerDocument;
+      } else {
+        return null;
+      }
+    }
+    public void setOwnerDocument(Document ownerDocument) {
+      this.ownerDocument = ownerDocument;
+    }
     @Override public Node insertBefore(org.w3c.dom.Node newChild, org.w3c.dom.Node refChild) throws DOMException {
         throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented later");
     }
@@ -203,7 +218,8 @@ public class Attribute implements Cloneable, Attr  {
     }
 
     @Override public String getName() { return getKey(); }
-    @Override public boolean getSpecified() { return !getValue().isEmpty(); }
+    @Override public boolean getSpecified() {return specified; }
+    public void setSpecified(boolean specified) { this.specified = specified; }
     // @Override public String getValue() { return val; } // exactly the same implementation exists
     // @Override void setValue(String value) throws DOMException { val = value; } // exactly the same implementation exists
     @Override public Element getOwnerElement() { return parent != null ? parent.ownerElement : null; }

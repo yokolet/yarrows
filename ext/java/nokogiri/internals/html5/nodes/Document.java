@@ -6,7 +6,6 @@ import nokogiri.internals.html5.internal.StringUtil;
 import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Attr;
 import org.w3c.dom.CDATASection;
-import org.w3c.dom.Comment;
 import org.w3c.dom.DocumentFragment;
 import org.w3c.dom.DOMConfiguration;
 import org.w3c.dom.DOMException;
@@ -137,10 +136,16 @@ public class Document extends Element implements org.w3c.dom.Document {
         throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented");
     }
     @Override public Text createTextNode(String data) {
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented");
+        TextNode node = new TextNode(data);
+        node.ownerDocument = this;
+        node.setBaseUri(baseUri());
+        return node;
     }
     @Override public Comment createComment(String data) {
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented");
+      Comment node = new Comment(data);
+      node.ownerDocument = this;
+      node.setBaseUri(baseUri());
+      return node;
     }
     @Override public CDATASection createCDATASection(String data) throws DOMException {
         throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented");
@@ -187,8 +192,54 @@ public class Document extends Element implements org.w3c.dom.Document {
     @Override public void setStrictErrorChecking(boolean strictErrorChecking) { /* does nothing */ }
     @Override public String getDocumentURI() { return baseUri().equals("") ? null : baseUri().trim(); }
     @Override public void setDocumentURI(String documentURI) { /* does nothing */ }
-    @Override public Node adoptNode(org.w3c.dom.Node source) throws DOMException {
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented");
+    @Override public org.w3c.dom.Node adoptNode(org.w3c.dom.Node source) throws DOMException {
+      if (source.getNodeType() == org.w3c.dom.Node.DOCUMENT_NODE) {
+        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document nodes cannot be adopted.");
+      } else if (source.getNodeType() == org.w3c.dom.Node.DOCUMENT_TYPE_NODE) {
+        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document types cannot be adopted.");
+      } else if (source.getNodeType() == org.w3c.dom.Node.ENTITY_NODE) {
+        return null;
+      } else if (source.getNodeType() == org.w3c.dom.Node.ENTITY_REFERENCE_NODE) {
+        return (Node)source; // TODO: needs more work
+      } else if (source.getNodeType() == org.w3c.dom.Node.NOTATION_NODE) {
+        return null;
+      }
+
+      if (!(source instanceof Node || source instanceof Attribute)) { return null; }
+
+      if (source.getNodeType() == org.w3c.dom.Node.ATTRIBUTE_NODE) {
+        Attribute attribute = (Attribute)source;
+        Attributes attributes = attribute.parent.ownerElement.attributes;
+        attributes.remove(attribute.getKey());
+        attribute.parent = null;
+        attribute.setOwnerDocument(this);
+        return attribute;
+      } else if (source.getNodeType() == org.w3c.dom.Node.DOCUMENT_FRAGMENT_NODE ||
+        source.getNodeType() == org.w3c.dom.Node.ELEMENT_NODE) {
+        Node rootNode = (Node)source;
+        rootNode.traverse((node, depth) -> {
+          node.ownerDocument = this;
+          Attributes attributes = node.attributes();
+          for (int i = 0; i < attributes.getLength(); i++) {
+            Attribute attributeAt = (Attribute)attributes.item(i);
+            attributeAt.setOwnerDocument(this);
+          }
+        });
+        rootNode.parentNode.removeChildInner(rootNode);
+        rootNode.parentNode = null;
+        return rootNode;
+      } else if (source.getNodeType() == org.w3c.dom.Node.PROCESSING_INSTRUCTION_NODE ||
+        source.getNodeType() == org.w3c.dom.Node.TEXT_NODE ||
+        source.getNodeType() == org.w3c.dom.Node.CDATA_SECTION_NODE ||
+        source.getNodeType() == org.w3c.dom.Node.COMMENT_NODE) {
+        Node node = (Node)source;
+        node.ownerDocument = this;
+        node.parentNode.removeChildInner(node);
+        node.parentNode = null;
+        return node;
+      } else {
+        return null;
+      }
     }
     @Override public DOMConfiguration getDomConfig() { return configuration; }
     @Override public void normalizeDocument() { /* does nothing */ }

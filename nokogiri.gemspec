@@ -161,6 +161,7 @@ Gem::Specification.new do |spec|
     "ext/java/nokogiri/internals/html5/nodes/Comment.java",
     "ext/java/nokogiri/internals/html5/nodes/DataNode.java",
     "ext/java/nokogiri/internals/html5/nodes/Document.java",
+    "ext/java/nokogiri/internals/html5/nodes/DocumentFragment.java",
     "ext/java/nokogiri/internals/html5/nodes/DocumentType.java",
     "ext/java/nokogiri/internals/html5/nodes/Element.java",
     "ext/java/nokogiri/internals/html5/nodes/Entities.java",
