@@ -1,6 +1,7 @@
 package nokogiri;
 
 import nokogiri.internals.Html5ParserContext;
+import nokogiri.internals.html5.nodes.Document;
 import org.jruby.Ruby;
 import org.jruby.RubyClass;
 import org.jruby.RubyString;
@@ -9,7 +10,10 @@ import org.jruby.anno.JRubyMethod;
 import org.jruby.runtime.Helpers;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
-import org.w3c.dom.*;
+import org.w3c.dom.Attr;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 import static nokogiri.internals.NokogiriHelpers.getNokogiriClass;
 
@@ -51,7 +55,7 @@ public class Html5Document extends Html4Document
     final Ruby runtime = context.runtime;
     Html5Document html5Document;
     try {
-      Document docNode = createNewDocument(runtime);
+      Document docNode = new Document("");
       html5Document = (Html5Document) NokogiriService.HTML5_DOCUMENT_ALLOCATOR.allocate(runtime, (RubyClass) klazz);
       html5Document.setDocumentNode(context.runtime, docNode);
     } catch (Exception ex) {
@@ -89,7 +93,7 @@ public class Html5Document extends Html4Document
 
   @Override
   void
-  init(Ruby runtime, Document document)
+  init(Ruby runtime, org.w3c.dom.Document document)
   {
     //stabilizeTextContent(document);  // guess jsoup doesn't need stabilize text and attrs
     document.normalize();
@@ -162,35 +166,37 @@ public class Html5Document extends Html4Document
   }
 
   /*
-  args[0] : input
-  args[1] : context node || document
-  args[2] : encoding
-  args[3] : ParseOptions::DEFAULT_HTML
-  args[4] : options in Hash
+  args[0] : self
+  args[1] : input
+  args[2] : context node || document
+  args[3] : encoding
+  args[4] : ParseOptions::DEFAULT_HTML
+  args[5] : options in Hash
  */
-  @JRubyMethod(meta = true, required = 5)
+  @JRubyMethod(meta = true, required = 6)
   public static IRubyObject
   fragment_from_io(ThreadContext context, IRubyObject klass, IRubyObject[] args)
   {
-    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3], args[4]);
-    ctx.setIOInputSource(context, args[0], RubyString.newEmptyString(context.runtime));
-    return ctx.parse_fragment(context, (RubyClass) klass, args[1]);
+    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[3], args[4], args[5]);
+    ctx.setIOInputSource(context, args[1], RubyString.newEmptyString(context.runtime));
+    return ctx.parse_fragment(context, (RubyClass) klass, args[0], args[2]);
   }
 
   /*
-  args[0] : input
-  args[1] : context node || document
-  args[2] : encoding
-  args[3] : ParseOptions::DEFAULT_HTML
-  args[4] : options in Hash
+  args[0] : self
+  args[1] : input
+  args[2] : context node || document
+  args[3] : encoding
+  args[4] : ParseOptions::DEFAULT_HTML
+  args[5] : options in Hash
    */
-  @JRubyMethod(meta = true, required = 5)
+  @JRubyMethod(meta = true, required = 6)
   public static IRubyObject
   fragment_from_memory(ThreadContext context, IRubyObject klass, IRubyObject[] args)
   {
-    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[2], args[3], args[4]);
-    ctx.setStringInputSource(context, args[0], RubyString.newEmptyString(context.runtime));
-    return ctx.parse_fragment(context, (RubyClass) klass, args[1]);
+    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[3], args[4], args[5]);
+    ctx.setStringInputSourceHtml5(context, args[1], RubyString.newEmptyString(context.runtime), args[3]);
+    return ctx.parse_fragment(context, (RubyClass) klass, args[0], args[2]);
   }
 
   @JRubyMethod(rest = true, required = 1, optional = 1)

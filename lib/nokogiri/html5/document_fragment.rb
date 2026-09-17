@@ -78,12 +78,11 @@ module Nokogiri
           context = options.delete(:context)
 
           document = HTML5::Document.new
+          document.encoding = "UTF-8"
           if Nokogiri.uses_gumbo?
-            document.encoding = "UTF-8"
             input = HTML5.read_and_encode(input, encoding)
           else
-            input = HTML5.set_input_encoding(input, encoding)
-            document.encoding = HTML5.find_document_encoding(input)
+            options[:encoding] = encoding
           end
 
           new(document, input, context, options)
@@ -174,11 +173,13 @@ module Nokogiri
           options[:max_attributes] ||= 400
           options[:max_errors] ||= options.delete(:max_parse_errors) || 0
           options[:max_tree_depth] ||= 400
+          encoding = options.delete(:encoding) if options.key(:encoding)
 
           if input.respond_to?(:read)
-            return Nokogiri::HTML5::Document.fragment_from_io(input, context || doc, doc.encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
+            return Nokogiri::HTML5::Document.fragment_from_io(self, input, context || doc, encoding || doc.encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
+          else
+            return Nokogiri::HTML5::Document.fragment_from_memory(self, input, context || doc, encoding || doc.encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
           end
-          Nokogiri::HTML5::Document.fragment_from_memory(input, context || doc, doc.encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
         end
       end
 

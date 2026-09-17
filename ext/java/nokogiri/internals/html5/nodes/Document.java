@@ -29,7 +29,7 @@ import nokogiri.internals.html5.select.Evaluator;
 import static nokogiri.internals.html5.parser.Parser.NamespaceHtml;
 
 /**
- A HTML Document.
+ An HTML Document.
 
  @author Jonathan Hedley, jonathan@hedley.net */
 public class Document extends Element implements org.w3c.dom.Document {
@@ -85,10 +85,10 @@ public class Document extends Element implements org.w3c.dom.Document {
     public static class DocImpl implements DOMImplementation {
         @Override public boolean hasFeature(String feature, String version) { return false; }
         @Override public DocumentType createDocumentType(String qualifiedName, String publicId, String systemId) throws DOMException {
-            throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented later");
+            throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document's createDocumentType will be implemented later");
         }
         @Override public Document createDocument(String namespaceURI, String qualifiedName, org.w3c.dom.DocumentType doctype) throws DOMException {
-            throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented later");
+            throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document's createDocument will be implemented later");
         }
         @Override public Object getFeature(String feature, String version) { return null; }
     }
@@ -102,7 +102,7 @@ public class Document extends Element implements org.w3c.dom.Document {
             @Override public boolean contains(String str) { return false; }
         };
         @Override public void setParameter(String name, Object value) throws DOMException {
-            throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented later");
+            throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document's setParameter method will be implemented later");
         }
         @Override public Object getParameter(String name) throws DOMException { return null; }
         @Override public boolean canSetParameter(String name, Object value) { return false; }
@@ -133,7 +133,10 @@ public class Document extends Element implements org.w3c.dom.Document {
     @Override public Element getDocumentElement() { return (Element)firstChild(); }
     // Element createElement(String tagName) throws DOMException
     @Override public DocumentFragment createDocumentFragment() {
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented");
+      nokogiri.internals.html5.nodes.DocumentFragment fragment = new nokogiri.internals.html5.nodes.DocumentFragment();
+      fragment.ownerDocument = this;
+      fragment.setBaseUri(baseUri());
+      return fragment;
     }
     @Override public Text createTextNode(String data) {
         TextNode node = new TextNode(data);
@@ -148,16 +151,16 @@ public class Document extends Element implements org.w3c.dom.Document {
       return node;
     }
     @Override public CDATASection createCDATASection(String data) throws DOMException {
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented");
+        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document's createCDATASection will be implemented");
     }
     @Override public ProcessingInstruction createProcessingInstruction(String target, String data) {
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented");
+        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document's createProcessingInstruction will be implemented");
     }
     @Override public Attr createAttribute(String name) throws DOMException {
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented");
+        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document's createAttribute will be implemented");
     }
     @Override public EntityReference createEntityReference(String name) throws DOMException {
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented");
+        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document's createEntityReference will be implemented");
     }
     @Override public org.w3c.dom.NodeList getElementsByTagName(String name) {
         if (!name.equals("*")) { return getElementsByTag(name); }
@@ -166,7 +169,7 @@ public class Document extends Element implements org.w3c.dom.Document {
         return Collector.collect(new Evaluator.AllElements(), element);
     }
     @Override public Node importNode(org.w3c.dom.Node importNode, boolean deep) throws DOMException {
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented");
+        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document's importNode will be implemented");
     }
     @Override public Element createElementNS(String namespaceURI, String qualifiedName) throws DOMException {
         throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented");

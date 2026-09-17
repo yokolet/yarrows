@@ -2,6 +2,7 @@ package nokogiri.internals;
 
 import nokogiri.*;
 import nokogiri.internals.html5.nodes.Document;
+import nokogiri.internals.html5.nodes.Element;
 import nokogiri.internals.html5.nodes.Node;
 import nokogiri.internals.html5.parser.ParseError;
 import nokogiri.internals.html5.parser.ParseErrorList;
@@ -10,6 +11,7 @@ import org.jruby.*;
 import org.jruby.runtime.Helpers;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
+import org.w3c.dom.DocumentFragment;
 import org.xml.sax.SAXException;
 
 import java.io.IOException;
@@ -181,18 +183,22 @@ public class Html5ParserContext extends ParserContext
     return htmlDocument;
   }
 
-  public XmlNodeSet
-  parse_fragment(ThreadContext context, RubyClass klass, IRubyObject base)
+  public XmlDocumentFragment
+  parse_fragment(ThreadContext context, RubyClass klass, IRubyObject fragment, IRubyObject baseContext)
   {
-    XmlNodeSet xmlNodeSet;
     try {
-      XmlNode xmlNode = (XmlNode)base;
-      org.w3c.dom.Node baseNode = xmlNode.getNode();
-      String url = baseNode.getBaseURI() == null ? "" : baseNode.getBaseURI();
-      List<Node> children = do_parse_fragment(url);
-      xmlNodeSet = wrapNodeList(context, klass, children);
+      XmlDocumentFragment xmlDocumentFragment = (XmlDocumentFragment)fragment;
+      org.w3c.dom.DocumentFragment fragmentNode = (DocumentFragment) xmlDocumentFragment.getNode();
+      XmlNode xmlNode = (XmlNode)baseContext;
+      org.w3c.dom.Node baseContextNode = xmlNode.getNode();
+      String url = baseContextNode.getBaseURI() == null ? "" : baseContextNode.getBaseURI();
+      List<Node> children = do_parse_fragment((Element)baseContextNode, url);
+      for (Node child : children) {
+        org.w3c.dom.Node adopted = fragmentNode.getOwnerDocument().adoptNode(child);
+        fragmentNode.appendChild(adopted);
+      }
       //addErrorsIfNecessary(context, xmlDoc); // TODO: needs the way to pass errors
-      return xmlNodeSet;
+      return xmlDocumentFragment;
     } catch (Exception e) {
       // TODO: consider a much better exception handling
       XmlSyntaxError xmlSyntaxError = XmlSyntaxError.createXMLSyntaxError(context.runtime);
@@ -202,19 +208,9 @@ public class Html5ParserContext extends ParserContext
   }
 
   protected List<Node>
-  do_parse_fragment(String url) throws SAXException, IOException
+  do_parse_fragment(Element element, String url) throws SAXException, IOException
   {
     Reader reader = new InputStreamReader(getInputSource().getByteStream(), java_encoding);
-    return parser.parseFragmentInput(reader, null, url);
-  }
-
-  private XmlNodeSet
-  wrapNodeList(ThreadContext context, RubyClass klass, List<Node> children)
-  {
-    IRubyObject[] nodes = new IRubyObject[children.size()];
-    for (int i = 0; i < children.size(); i++) {
-      nodes[i] = new XmlNode(context.runtime, klass, children.get(i));
-    }
-    return XmlNodeSet.newNodeSet(context.runtime, nodes);
+    return parser.parseFragmentInput(reader, element, url);
   }
 }
