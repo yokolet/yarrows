@@ -1949,4 +1949,24 @@ public class XmlNode extends RubyObject
     return super.toJava(target);
   }
 
+  // This method is added to handle write_to method of Nokogiri::HTML5::Node
+  @JRubyMethod(name = "html_standard_serialize")
+  public IRubyObject html_standard_serialize(ThreadContext context, IRubyObject option)
+  {
+    Boolean preserve_newline = option.toJava(Boolean.class);
+    String output = null;
+    if (getNode() instanceof nokogiri.internals.html5.nodes.Node) {
+      nokogiri.internals.html5.nodes.Node innerNode = (nokogiri.internals.html5.nodes.Node) getNode();
+      nokogiri.internals.html5.nodes.Document innerDoc = (nokogiri.internals.html5.nodes.Document) innerNode.getOwnerDocument();
+      innerDoc.outputSettings().prettyPrint(preserve_newline);
+      if (innerNode instanceof nokogiri.internals.html5.nodes.DocumentFragment) {
+        output = ((nokogiri.internals.html5.nodes.DocumentFragment) innerNode).html();
+      } else {
+        output = innerNode.outerHtml();
+      }
+    } else {
+      output = getNode().toString();
+    }
+    return NokogiriHelpers.stringOrBlank(context.runtime, output);
+  }
 }
