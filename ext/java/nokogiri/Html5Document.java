@@ -4,6 +4,7 @@ import nokogiri.internals.Html5ParserContext;
 import nokogiri.internals.html5.nodes.Document;
 import org.jruby.Ruby;
 import org.jruby.RubyClass;
+import org.jruby.RubyIO;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyClass;
 import org.jruby.anno.JRubyMethod;
@@ -169,15 +170,18 @@ public class Html5Document extends Html4Document
   args[0] : self
   args[1] : input
   args[2] : context node || document
-  args[3] : encoding
-  args[4] : ParseOptions::DEFAULT_HTML
-  args[5] : options in Hash
+  args[3] : ParseOptions::DEFAULT_HTML
+  args[4] : options in Hash
  */
-  @JRubyMethod(meta = true, required = 6)
+  @JRubyMethod(meta = true, required = 5)
   public static IRubyObject
   fragment_from_io(ThreadContext context, IRubyObject klass, IRubyObject[] args)
   {
-    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[3], args[4], args[5]);
+    IRubyObject encoding = context.runtime.getNil();
+    if (args[1] instanceof RubyIO) {
+      encoding = ((RubyIO)args[1]).external_encoding(context);
+    }
+    Html5ParserContext ctx = new Html5ParserContext(context.runtime, encoding, args[3], args[4]);
     ctx.setIOInputSource(context, args[1], RubyString.newEmptyString(context.runtime));
     return ctx.parse_fragment(context, (RubyClass) klass, args[0], args[2]);
   }
@@ -186,16 +190,19 @@ public class Html5Document extends Html4Document
   args[0] : self
   args[1] : input
   args[2] : context node || document
-  args[3] : encoding
-  args[4] : ParseOptions::DEFAULT_HTML
-  args[5] : options in Hash
+  args[3] : ParseOptions::DEFAULT_HTML
+  args[4] : options in Hash
    */
-  @JRubyMethod(meta = true, required = 6)
+  @JRubyMethod(meta = true, required = 5)
   public static IRubyObject
   fragment_from_memory(ThreadContext context, IRubyObject klass, IRubyObject[] args)
   {
-    Html5ParserContext ctx = new Html5ParserContext(context.runtime, args[3], args[4], args[5]);
-    ctx.setStringInputSourceHtml5(context, args[1], RubyString.newEmptyString(context.runtime), args[3]);
+    IRubyObject encoding = context.runtime.getNil();
+    if (args[1] instanceof RubyString) {
+      encoding = ((RubyString)args[1]).encoding(context);
+    }
+    Html5ParserContext ctx = new Html5ParserContext(context.runtime, encoding, args[3], args[4]);
+    ctx.setStringInputSourceHtml5(context, args[1], RubyString.newEmptyString(context.runtime), context.runtime.getNil());
     return ctx.parse_fragment(context, (RubyClass) klass, args[0], args[2]);
   }
 

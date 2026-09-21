@@ -17,7 +17,6 @@ import org.xml.sax.SAXException;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -193,6 +192,7 @@ public class Html5ParserContext extends ParserContext
       org.w3c.dom.Node baseContextNode = xmlNode.getNode();
       String url = baseContextNode.getBaseURI() == null ? "" : baseContextNode.getBaseURI();
       List<Node> children = do_parse_fragment((Element)baseContextNode, url);
+      ((Document)fragmentNode.getOwnerDocument()).outputSettings().charset(StandardCharsets.UTF_8);
       for (Node child : children) {
         org.w3c.dom.Node adopted = fragmentNode.getOwnerDocument().adoptNode(child);
         fragmentNode.appendChild(adopted);
