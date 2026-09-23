@@ -130,7 +130,14 @@ public class Document extends Element implements org.w3c.dom.Document {
     @Override public boolean isDefaultNamespace(String namespaceURI) { return false; }
     @Override public DocumentType getDoctype() { return documentType(); }
     @Override public DOMImplementation getImplementation() { return implementation; }
-    @Override public Element getDocumentElement() { return (Element)firstChild(); }
+    @Override public Element getDocumentElement() {
+      for (Node child : childNodes) {
+        if (child instanceof Element) {
+          return (Element) child;
+        }
+      }
+      return null;
+    }
     // Element createElement(String tagName) throws DOMException
     @Override public DocumentFragment createDocumentFragment() {
       nokogiri.internals.html5.nodes.DocumentFragment fragment = new nokogiri.internals.html5.nodes.DocumentFragment();
