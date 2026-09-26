@@ -68,6 +68,7 @@ public class Html5ParserContext extends ParserContext
     parser = Parser.htmlParser();
     parser.setTrackPosition(true);
     parser.setTrackErrors((int)settings.maxErrors);
+    parser.setMaxDepth((int)settings.maxTreeDepth);
   }
 
   @Override
@@ -100,7 +101,7 @@ public class Html5ParserContext extends ParserContext
     ParseErrorList errorList = parser.getErrors();
     for (ParseError error : errorList) {
       XmlSyntaxError rubyError = XmlSyntaxError.createXMLSyntaxError(runtime, new RuntimeException(error.getErrorMessage()));
-      rubyError.setInstanceVariable("@file", RubyString.newString(runtime, baseURI));
+      rubyError.setInstanceVariable("@file", NokogiriHelpers.stringOrBlank(runtime, baseURI));
       errors.add(rubyError);
     }
   }
@@ -186,9 +187,18 @@ public class Html5ParserContext extends ParserContext
   parse_fragment(ThreadContext context, RubyClass klass, IRubyObject fragment, IRubyObject baseContext)
   {
     try {
-      XmlDocumentFragment xmlDocumentFragment = (XmlDocumentFragment)fragment;
+      XmlDocumentFragment xmlDocumentFragment = (XmlDocumentFragment) fragment;
       org.w3c.dom.DocumentFragment fragmentNode = (DocumentFragment) xmlDocumentFragment.getNode();
-      XmlNode xmlNode = (XmlNode)baseContext;
+      XmlNode xmlNode = null;
+      if (baseContext instanceof XmlNode) {
+        xmlNode = (XmlNode) baseContext;
+      } else if (baseContext instanceof RubyString) {
+        String tagName = baseContext.asJavaString();
+        Element element = (Element) fragmentNode.getOwnerDocument().createElement(tagName);
+        xmlNode = new XmlNode(context.runtime, klass, element);
+      } else {
+        throw new IllegalArgumentException("Invalid context type: " + baseContext.getClass());
+      }
       org.w3c.dom.Node baseContextNode = xmlNode.getNode();
       String url = baseContextNode.getBaseURI() == null ? "" : baseContextNode.getBaseURI();
       List<Node> children = do_parse_fragment((Element)baseContextNode, url);

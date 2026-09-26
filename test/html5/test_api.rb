@@ -189,7 +189,7 @@ class TestHtml5API < Nokogiri::TestCase
     assert_empty(noscript.children)
     img = doc.at("/html/body/img")
     refute_nil(img)
-  end
+  end if Nokogiri.uses_gumbo?
 
   def test_parse_noscript_as_text_in_head
     # In contrast to the previous test, when the scripting flag is enabled, the content
@@ -200,7 +200,18 @@ class TestHtml5API < Nokogiri::TestCase
     assert_empty(doc.errors)
     assert_equal(1, noscript.children.length)
     assert_kind_of(Nokogiri::XML::Text, noscript.children.first)
-  end
+  end if Nokogiri.uses_gumbo?
+
+  def test_parse_noscript_as_text_in_head
+    # In contrast to the previous test, when the scripting flag is enabled, the content
+    # of the noscript element is parsed as raw text.
+    html = "<!DOCTYPE html><head><noscript><img src=!></noscript></head>"
+    doc = Nokogiri::HTML5(html, parse_noscript_content_as_text: true, max_errors: 100)
+    noscript = doc.at("/html/head/noscript")
+    assert_equal(1, doc.errors.length, doc.errors.join("\n"))
+    assert_equal(1, noscript.children.length)
+    assert_kind_of(Nokogiri::XML::Text, noscript.children.first)
+  end if Nokogiri.jruby?
 
   def test_parse_noscript_as_elements_in_body
     html = "<!DOCTYPE html><body><noscript><img src=!></noscript></body>"
@@ -217,7 +228,7 @@ class TestHtml5API < Nokogiri::TestCase
     assert_empty(doc.errors, doc.errors.join("\n"))
     assert_equal(1, noscript.children.length)
     assert_kind_of(Nokogiri::XML::Text, noscript.children.first)
-  end
+  end if Nokogiri.uses_gumbo?
 
   def test_parse_noscript_fragment_as_elements
     html = "<meta charset='UTF-8'><link rel=stylesheet href=!>"

@@ -169,7 +169,7 @@ public class Html5Document extends Html4Document
   /*
   args[0] : self
   args[1] : input
-  args[2] : context node || document
+  args[2] : context (string | node) || document
   args[3] : ParseOptions::DEFAULT_HTML
   args[4] : options in Hash
  */
@@ -189,7 +189,7 @@ public class Html5Document extends Html4Document
   /*
   args[0] : self
   args[1] : input
-  args[2] : context node || document
+  args[2] : context (string | node) || document
   args[3] : ParseOptions::DEFAULT_HTML
   args[4] : options in Hash
    */
