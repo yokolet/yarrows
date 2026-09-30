@@ -1953,7 +1953,8 @@ public class XmlNode extends RubyObject
   @JRubyMethod(name = "html_standard_serialize")
   public IRubyObject html_standard_serialize(ThreadContext context, IRubyObject option)
   {
-    Boolean preserve_newline = option.toJava(Boolean.class);
+    Boolean preserve_newline = false;
+    if (option instanceof RubyBoolean) { preserve_newline = option.toJava(Boolean.class); }
     String output = null;
     if (getNode() instanceof nokogiri.internals.html5.nodes.Node) {
       nokogiri.internals.html5.nodes.Node innerNode = (nokogiri.internals.html5.nodes.Node) getNode();
@@ -1968,5 +1969,23 @@ public class XmlNode extends RubyObject
       output = getNode().toString();
     }
     return NokogiriHelpers.stringOrBlank(context.runtime, output);
+  }
+
+  @JRubyMethod(name = "prepend_newline?")
+  public IRubyObject prepend_newline(ThreadContext context) {
+    Node node = getNode();
+    if (node.getNodeType() == Node.ELEMENT_NODE) {
+      Set<String> set = Set.of("pre", "textarea", "listing");
+      if (node.getChildNodes().getLength() == 0 || node.getNodeName() == null || !set.contains(node.getNodeName())) {
+        return context.runtime.getFalse();
+      }
+    }
+    if (node.getFirstChild() != null && node.getFirstChild().getNodeType() == Node.TEXT_NODE) {
+      String content = node.getNodeValue();
+      if (content != null && !content.isEmpty() && content.charAt(0) == '\n') {
+        return context.runtime.getTrue();
+      }
+    }
+    return context.runtime.getFalse();
   }
 }
