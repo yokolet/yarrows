@@ -243,7 +243,7 @@ class TestHtml5API < Nokogiri::TestCase
     assert_empty(frag.errors)
     assert_equal(1, frag.children.length)
     assert_kind_of(Nokogiri::XML::Text, frag.children.first)
-  end
+  end if Nokogiri.uses_gumbo?
 
   def test_parse_noscript_content_default
     html = "<!DOCTYPE html><body><noscript><img src=!></noscript></body>"
@@ -265,7 +265,23 @@ class TestHtml5API < Nokogiri::TestCase
       html = doc.at("/html/body/#{tag}").inner_html(preserve_newline: true)
       assert_equal "\n\nContent", html
     end
-  end
+  end if Nokogiri.uses_gumbo?
+
+  # The jsoup parser handles double newlines in defferent ways depending on the tag.
+  # In case of pre tag, double newlines are coalesced to one at parsing.
+  [["pre", "\nContent"], ["listing", "Content"], ["textarea", "\n\nContent"]].each do |tag, expected|
+    define_method("test_serialize_preserve_newline_#{tag}".to_sym) do
+      doc = Nokogiri::HTML5("<!DOCTYPE html><#{tag}>\n\nContent</#{tag}>")
+      html = doc.at("/html/body/#{tag}").serialize(preserve_newline: true)
+      assert_equal "<#{tag}>#{expected}</#{tag}>", html
+    end
+
+    define_method("test_inner_html_preserve_newline_#{tag}".to_sym) do
+      doc = Nokogiri::HTML5("<!DOCTYPE html><#{tag}>\n\nContent</#{tag}>")
+      html = doc.at("/html/body/#{tag}").inner_html(preserve_newline: true)
+      assert_equal "#{expected}", html
+    end
+  end if Nokogiri.jruby?
 
   def test_document_io
     html = StringIO.new("<!DOCTYPE html><span>test</span>", "r")
