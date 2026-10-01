@@ -173,7 +173,7 @@ module Nokogiri
           options[:max_tree_depth] ||= 400
 
           if input.respond_to?(:read)
-            doc = parse_io(input, url, encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
+            doc = parse_io(input, url, encoding || input.external_encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
           else
             doc = parse_memory(input, url, encoding, Nokogiri::XML::ParseOptions::DEFAULT_HTML.to_i, **options)
           end
