@@ -191,6 +191,18 @@ class TestHtml5API < Nokogiri::TestCase
     refute_nil(img)
   end if Nokogiri.uses_gumbo?
 
+  def test_parse_noscript_as_elements_in_head
+    # JRuby version doesn't pass the parse_noscript_content_as_text option.
+    # JRuby's parser, jsoup, handles the noscript tag in a different way.
+    # Considering future changes of the jsoup parser, JRuby version won't persue the same behavior here.
+    html = "<!DOCTYPE html><head><noscript><img src=!></noscript></head>"
+    doc = Nokogiri::HTML5(html, parse_noscript_content_as_text: true, max_errors: 100)
+    noscript = doc.at("/html/head/noscript")
+    assert_equal(0, doc.errors.length, doc.errors.join("\n"))
+    assert_equal(1, noscript.children.length)
+    assert_kind_of(Nokogiri::XML::Element, noscript.children.first)
+  end if Nokogiri.jruby?
+
   def test_parse_noscript_as_text_in_head
     # In contrast to the previous test, when the scripting flag is enabled, the content
     # of the noscript element is parsed as raw text.
@@ -201,17 +213,6 @@ class TestHtml5API < Nokogiri::TestCase
     assert_equal(1, noscript.children.length)
     assert_kind_of(Nokogiri::XML::Text, noscript.children.first)
   end if Nokogiri.uses_gumbo?
-
-  def test_parse_noscript_as_text_in_head
-    # In contrast to the previous test, when the scripting flag is enabled, the content
-    # of the noscript element is parsed as raw text.
-    html = "<!DOCTYPE html><head><noscript><img src=!></noscript></head>"
-    doc = Nokogiri::HTML5(html, parse_noscript_content_as_text: true, max_errors: 100)
-    noscript = doc.at("/html/head/noscript")
-    assert_equal(1, doc.errors.length, doc.errors.join("\n"))
-    assert_equal(1, noscript.children.length)
-    assert_kind_of(Nokogiri::XML::Text, noscript.children.first)
-  end if Nokogiri.jruby?
 
   def test_parse_noscript_as_elements_in_body
     html = "<!DOCTYPE html><body><noscript><img src=!></noscript></body>"
@@ -269,17 +270,17 @@ class TestHtml5API < Nokogiri::TestCase
 
   # The jsoup parser handles double newlines in defferent ways depending on the tag.
   # In case of pre tag, double newlines are coalesced to one at parsing.
-  [["pre", "\nContent"], ["listing", "Content"], ["textarea", "\n\nContent"]].each do |tag, expected|
+  ["pre", "listing", "textarea"].each do |tag|
     define_method("test_serialize_preserve_newline_#{tag}".to_sym) do
       doc = Nokogiri::HTML5("<!DOCTYPE html><#{tag}>\n\nContent</#{tag}>")
       html = doc.at("/html/body/#{tag}").serialize(preserve_newline: true)
-      assert_equal "<#{tag}>#{expected}</#{tag}>", html
+      assert_equal "<#{tag}>\n\nContent</#{tag}>", html
     end
 
     define_method("test_inner_html_preserve_newline_#{tag}".to_sym) do
       doc = Nokogiri::HTML5("<!DOCTYPE html><#{tag}>\n\nContent</#{tag}>")
       html = doc.at("/html/body/#{tag}").inner_html(preserve_newline: true)
-      assert_equal "#{expected}", html
+      assert_equal "Content", html
     end
   end if Nokogiri.jruby?
 
