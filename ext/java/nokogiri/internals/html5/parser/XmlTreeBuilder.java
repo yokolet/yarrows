@@ -1,6 +1,7 @@
 package nokogiri.internals.html5.parser;
 
 import nokogiri.internals.html5.helper.Validate;
+import nokogiri.internals.html5.internal.NamespaceBindings;
 import nokogiri.internals.html5.internal.SharedConstants;
 import nokogiri.internals.html5.nodes.Attribute;
 import nokogiri.internals.html5.nodes.Attributes;
@@ -13,6 +14,8 @@ import nokogiri.internals.html5.nodes.Element;
 import nokogiri.internals.html5.nodes.Entities;
 import nokogiri.internals.html5.nodes.LeafNode;
 import nokogiri.internals.html5.nodes.Node;
+import nokogiri.internals.html5.nodes.NodeInternals;
+import nokogiri.internals.html5.nodes.ProcessingInstruction;
 import nokogiri.internals.html5.nodes.TextNode;
 import nokogiri.internals.html5.nodes.XmlDeclaration;
 import nokogiri.internals.html5.select.Elements;
@@ -20,11 +23,11 @@ import org.jspecify.annotations.Nullable;
 
 import java.io.Reader;
 import java.io.StringReader;
-import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static nokogiri.internals.html5.internal.Normalizer.asciiLowerCase;
 import static nokogiri.internals.html5.parser.Parser.NamespaceXml;
 
 /**
@@ -35,9 +38,7 @@ import static nokogiri.internals.html5.parser.Parser.NamespaceXml;
  * @author Jonathan Hedley
  */
 public class XmlTreeBuilder extends TreeBuilder {
-    static final String XmlnsKey = "xmlns";
-    static final String XmlnsPrefix = "xmlns:";
-    private final ArrayDeque<HashMap<String, String>> namespacesStack = new ArrayDeque<>(); // stack of namespaces, prefix => urn
+    final NamespaceBindings namespaceBindings = new NamespaceBindings();
 
     @Override ParseSettings defaultSettings() {
         return ParseSettings.preserveCase;
@@ -51,11 +52,9 @@ public class XmlTreeBuilder extends TreeBuilder {
             .escapeMode(Entities.EscapeMode.xhtml)
             .prettyPrint(false); // as XML, we don't understand what whitespace is significant or not
 
-        namespacesStack.clear();
-        HashMap<String, String> ns = new HashMap<>();
-        ns.put("xml", NamespaceXml);
-        ns.put("", NamespaceXml);
-        namespacesStack.push(ns);
+        namespaceBindings.clear();
+        namespaceBindings.put("xml", NamespaceXml);
+        namespaceBindings.put("", NamespaceXml);
     }
 
     @Override
@@ -67,15 +66,13 @@ public class XmlTreeBuilder extends TreeBuilder {
         TokeniserState textState = context.tag().textState();
         if (textState != null) tokeniser.transition(textState);
 
-        // reconstitute the namespace stack by traversing the element and its parents (top down)
+        // establish the fragment's base namespace scope from the context and its ancestors, top down
         Elements chain = context.parents();
         chain.add(0, context);
         for (int i = chain.size() - 1; i >= 0; i--) {
             Element el = chain.get(i);
-            HashMap<String, String> namespaces = new HashMap<>(namespacesStack.peek());
-            namespacesStack.push(namespaces);
             if (el.attributesSize() > 0) {
-                processNamespaces(el.attributes(), namespaces);
+                namespaceBindings.applyDeclarations(el.attributes());
             }
         }
     }
@@ -104,11 +101,6 @@ public class XmlTreeBuilder extends TreeBuilder {
     @Override
     TagSet defaultTagSet() {
         return new TagSet(); // an empty tagset
-    }
-
-    @Override
-    int defaultMaxDepth() {
-        return Integer.MAX_VALUE;
     }
 
     @Override
@@ -144,25 +136,27 @@ public class XmlTreeBuilder extends TreeBuilder {
     }
 
     void insertElementFor(Token.StartTag startTag) {
-        // handle namespace for tag
-        HashMap<String, String> namespaces = new HashMap<>(namespacesStack.peek());
-        namespacesStack.push(namespaces);
-
         Attributes attributes = startTag.attributes;
         if (attributes != null) {
             settings.normalizeAttributes(attributes);
             attributes.deduplicate(settings);
-            processNamespaces(attributes, namespaces);
-            applyNamespacesToAttributes(attributes, namespaces);
         }
 
+        // close pruned namespace scopes before opening the incoming element's scope
         enforceStackDepthLimit();
+        namespaceBindings.pushScope();
+
+        if (attributes != null) {
+            namespaceBindings.applyDeclarations(attributes);
+            applyNamespacesToAttributes(attributes);
+            startTag.finaliseAttributeRanges(settings);
+        }
 
         String tagName = startTag.tagName.value();
-        String ns = resolveNamespace(tagName, namespaces);
+        String ns = resolveNamespace(tagName);
         Tag tag = tagFor(tagName, startTag.normalName, ns, settings);
         Element el = new Element(tag, null, attributes);
-        currentElement().appendChild(el);
+        currentElOrDoc().appendChild(el);
         push(el);
 
         if (startTag.isSelfClosing()) {
@@ -176,28 +170,15 @@ public class XmlTreeBuilder extends TreeBuilder {
         }
     }
 
-    private static void processNamespaces(Attributes attributes, HashMap<String, String> namespaces) {
-        // process attributes for namespaces (xmlns, xmlns:)
-        for (Attribute attr : attributes) {
-            String key = attr.getKey();
-            String value = attr.getValue();
-            if (key.equals(XmlnsKey)) {
-                namespaces.put("", value); // new default for this level
-            } else if (key.startsWith(XmlnsPrefix)) {
-                String nsPrefix = key.substring(XmlnsPrefix.length());
-                namespaces.put(nsPrefix, value);
-            }
-        }
-    }
-
-    private static void applyNamespacesToAttributes(Attributes attributes, HashMap<String, String> namespaces) {
-        // second pass, apply namespace to attributes. Collects them first then adds (as userData is an attribute)
+    /** Applies resolved namespace URIs to prefixed attributes. */
+    private void applyNamespacesToAttributes(Attributes attributes) {
+        // collect first, then add, as userData is stored as an attribute
         Map<String, String> attrPrefix = new HashMap<>();
         for (Attribute attr: attributes) {
+            if (NamespaceBindings.isDeclaration(attr.getKey())) continue;
             String prefix = attr.prefix();
             if (!prefix.isEmpty()) {
-                if (prefix.equals(XmlnsKey)) continue;
-                String ns = namespaces.get(prefix);
+                String ns = namespaceBindings.get(prefix);
                 if (ns != null) attrPrefix.put(SharedConstants.XmlnsAttr + prefix, ns);
             }
         }
@@ -205,39 +186,59 @@ public class XmlTreeBuilder extends TreeBuilder {
             attributes.userData(entry.getKey(), entry.getValue());
     }
 
-    private static String resolveNamespace(String tagName, HashMap<String, String> namespaces) {
-        String ns = namespaces.get("");
+    /** Resolves the namespace URI for a qualified tag name. */
+    private String resolveNamespace(String tagName) {
+        String ns = namespaceBindings.get("");
         int pos = tagName.indexOf(':');
         if (pos > 0) {
             String prefix = tagName.substring(0, pos);
-            if (namespaces.containsKey(prefix))
-                ns = namespaces.get(prefix);
+            String boundNamespace = namespaceBindings.get(prefix);
+            if (boundNamespace != null)
+                ns = boundNamespace;
         }
         return ns;
     }
 
+    @Override
+    Element pop() {
+        namespaceBindings.popScope();
+        return super.pop();
+    }
+
     void insertLeafNode(LeafNode node) {
-        currentElement().appendChild(node);
+        currentElOrDoc().appendChild(node);
         onNodeInserted(node);
     }
 
+    /** Inserts a comment or processing instruction at the current insertion point. */
     void insertCommentFor(Token.Comment commentToken) {
-        Comment comment = new Comment(commentToken.getData());
-        insertLeafNode(comment);
+        LeafNode node;
+        if (commentToken.isPI()) {
+            Token.PI piToken = commentToken.asPI();
+            ProcessingInstruction instruction = new ProcessingInstruction(piToken.target(), commentToken.getData());
+            NodeInternals.sourceDataStart(instruction, piToken.dataStartPos);
+            node = instruction;
+        } else {
+            node = new Comment(commentToken.getData());
+        }
+        insertLeafNode(node);
     }
 
     void insertCharacterFor(Token.Character token) {
         final String data = token.getData();
         LeafNode node;
-        if      (token.isCData())                       node = new CDataNode(data);
-        else if (currentElement().tag().is(Tag.Data))   node = new DataNode(data);
-        else                                            node = new TextNode(data);
+        if      (token.isCData()) node = new CDataNode(data);
+        else if (currentElOrDoc().tag().is(Tag.Data))
+            node = new DataNode(data);
+        else node = new TextNode(data);
         insertLeafNode(node);
     }
 
     void insertDoctypeFor(Token.Doctype token) {
-        DocumentType doctypeNode = new DocumentType(settings.normalizeTag(token.getName()), token.getPublicIdentifier(), token.getSystemIdentifier());
+        DocumentType doctypeNode = new DocumentType(settings.preserveTagCase() ? token.getName() : asciiLowerCase(token.getName()), token.getPublicIdentifier(), token.getSystemIdentifier());
         doctypeNode.setPubSysKey(token.getPubSysKey());
+        if (token.hasInternalSubset())
+            doctypeNode.setInternalSubset(token.getInternalSubset());
         insertLeafNode(doctypeNode);
     }
 
@@ -247,12 +248,6 @@ public class XmlTreeBuilder extends TreeBuilder {
         insertLeafNode(decl);
     }
 
-    @Override
-    Element pop() {
-        namespacesStack.pop();
-        return super.pop();
-    }
-
     /**
      * If the stack contains an element with this tag's name, pop up the stack to remove the first occurrence. If not
      * found, skips.
@@ -260,14 +255,10 @@ public class XmlTreeBuilder extends TreeBuilder {
      * @param endTag tag to close
      */
     protected void popStackToClose(Token.EndTag endTag) {
-        // like in HtmlTreeBuilder - don't scan up forever for very (artificially) deeply nested stacks
-        String elName = settings.normalizeTag(endTag.name());
+        String elName = settings.preserveTagCase() ? endTag.name() : asciiLowerCase(endTag.name());
         Element firstFound = null;
 
-        final int bottom = stack.size() - 1;
-        final int upper = bottom >= maxQueueDepth ? bottom - maxQueueDepth : 0;
-
-        for (int pos = stack.size() -1; pos >= upper; pos--) {
+        for (int pos = stack.size() -1; pos >= 0; pos--) {
             Element next = stack.get(pos);
             if (next.nodeName().equals(elName)) {
                 firstFound = next;
@@ -284,5 +275,4 @@ public class XmlTreeBuilder extends TreeBuilder {
             }
         }
     }
-    private static final int maxQueueDepth = 256; // an arbitrary tension point between real XML and crafted pain
 }

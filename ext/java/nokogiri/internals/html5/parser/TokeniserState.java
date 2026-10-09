@@ -1,7 +1,10 @@
 package nokogiri.internals.html5.parser;
 
+import nokogiri.internals.html5.internal.Normalizer;
+import nokogiri.internals.html5.internal.StringUtil;
 import nokogiri.internals.html5.nodes.DocumentType;
 
+import static nokogiri.internals.html5.internal.Normalizer.equalsIgnoreAsciiCase;
 import static nokogiri.internals.html5.nodes.Document.OutputSettings.Syntax.xml;
 
 /**
@@ -29,6 +32,27 @@ enum TokeniserState {
                     String data = r.consumeData();
                     t.emit(data);
                     break;
+            }
+        }
+    },
+    DataWhitespace {
+        // jsoup special: split batched Data characters where the spec handles them one by one.
+        // After </script>, InHead puts the space in " -->" in the head and "-->" in the body.
+        @Override
+        void read(Tokeniser t, CharacterReader r) {
+            char c = r.current();
+            if (StringUtil.isWhitespace(c)) {
+                t.emit(r.consumeWhitespace());
+            } else if (c == '&' && t.isWhitespaceReference()) {
+                // whitespace references eg &#32; will extend this run; others will unread until after the whitespace token
+                r.advance();
+                int[] ref = t.consumeCharacterReference(null, false, false);
+                assert ref != null;
+                t.emit(ref);
+            } else {
+                t.transition(Data);
+                // splitting before a null could leave a stray space before a later frameset
+                if (c != nullChar && t.charPending.data.hasData()) t.emitCharacters();
             }
         }
     },
@@ -107,12 +131,7 @@ enum TokeniserState {
                     t.advanceTransition(EndTagOpen);
                     break;
                 case '?':
-                    if (t.syntax == xml) {
-                        t.advanceTransition(MarkupProcessingOpen);
-                    } else {
-                        t.createBogusCommentPending();
-                        t.transition(BogusComment);
-                    }
+                    t.advanceTransition(ProcessingInstructionOpen);
                     break;
                 default:
                     if (r.matchesAsciiAlpha()) {
@@ -142,7 +161,6 @@ enum TokeniserState {
             } else {
                 t.error(this);
                 t.createBogusCommentPending();
-                t.commentPending.append('/'); // push the / back on that got us here
                 t.transition(BogusComment);
             }
         }
@@ -186,14 +204,7 @@ enum TokeniserState {
         // from < in rcdata
         @Override void read(Tokeniser t, CharacterReader r) {
             if (r.matches('/')) {
-                t.createTempBuffer();
                 t.advanceTransition(RCDATAEndTagOpen);
-            } else if (r.readFully() && r.matchesAsciiAlpha() && t.appropriateEndTagName() != null &&  !r.containsIgnoreCase(t.appropriateEndTagSeq())) {
-                // diverge from spec: got a start tag, but there's no appropriate end tag (</title>), so rather than
-                // consuming to EOF; break out here
-                t.tagPending = t.createTagPending(false).name(t.appropriateEndTagName());
-                t.emitTagPending();
-                t.transition(TagOpen); // straight into TagOpen, as we came from < and looks like we're on a start tag
             } else {
                 t.emit('<');
                 t.transition(Rcdata);
@@ -202,68 +213,17 @@ enum TokeniserState {
     },
     RCDATAEndTagOpen {
         @Override void read(Tokeniser t, CharacterReader r) {
-            if (r.matchesAsciiAlpha()) {
-                t.createTagPending(false);
-                t.tagPending.appendTagName(r.current());
-                t.dataBuffer.append(r.current());
-                t.advanceTransition(RCDATAEndTagName);
-            } else {
-                t.emit("</");
-                t.transition(Rcdata);
-            }
+            readEndTag(t, r, RCDATAEndTagName, Rcdata);
         }
     },
     RCDATAEndTagName {
         @Override void read(Tokeniser t, CharacterReader r) {
-            if (r.matchesAsciiAlpha()) {
-                String name = r.consumeTagName();
-                t.tagPending.appendTagName(name);
-                t.dataBuffer.append(name);
-                return;
-            }
-
-            char c = r.consume();
-            switch (c) {
-                case '\t':
-                case '\n':
-                case '\r':
-                case '\f':
-                case ' ':
-                    if (t.isAppropriateEndTagToken())
-                        t.transition(BeforeAttributeName);
-                    else
-                        anythingElse(t, r);
-                    break;
-                case '/':
-                    if (t.isAppropriateEndTagToken())
-                        t.transition(SelfClosingStartTag);
-                    else
-                        anythingElse(t, r);
-                    break;
-                case '>':
-                    if (t.isAppropriateEndTagToken()) {
-                        t.emitTagPending();
-                        t.transition(Data);
-                    }
-                    else
-                        anythingElse(t, r);
-                    break;
-                default:
-                    anythingElse(t, r);
-            }
-        }
-
-        private void anythingElse(Tokeniser t, CharacterReader r) {
-            t.emit("</");
-            t.emit(t.dataBuffer.value());
-            r.unconsume();
-            t.transition(Rcdata);
+            handleDataEndTag(t, r, Rcdata);
         }
     },
     RawtextLessthanSign {
         @Override void read(Tokeniser t, CharacterReader r) {
             if (r.matches('/')) {
-                t.createTempBuffer();
                 t.advanceTransition(RawtextEndTagOpen);
             } else {
                 t.emit('<');
@@ -283,23 +243,18 @@ enum TokeniserState {
     },
     ScriptDataLessthanSign {
         @Override void read(Tokeniser t, CharacterReader r) {
-            switch (r.consume()) {
+            switch (r.current()) {
                 case '/':
-                    t.createTempBuffer();
+                    r.advance();
                     t.transition(ScriptDataEndTagOpen);
                     break;
                 case '!':
+                    r.advance();
                     t.emit("<!");
                     t.transition(ScriptDataEscapeStart);
                     break;
-                case eof:
-                    t.emit('<');
-                    t.eofError(this);
-                    t.transition(Data);
-                    break;
                 default:
                     t.emit('<');
-                    r.unconsume();
                     t.transition(ScriptData);
             }
         }
@@ -424,12 +379,11 @@ enum TokeniserState {
         @Override void read(Tokeniser t, CharacterReader r) {
             if (r.matchesAsciiAlpha()) {
                 t.createTempBuffer();
-                t.dataBuffer.append(r.current());
+                t.dataBuffer.append(Normalizer.asciiLowerCase(r.current()));
                 t.emit('<');
                 t.emit(r.current());
                 t.advanceTransition(ScriptDataDoubleEscapeStart);
             } else if (r.matches('/')) {
-                t.createTempBuffer();
                 t.advanceTransition(ScriptDataEscapedEndTagOpen);
             } else {
                 t.emit('<');
@@ -439,15 +393,7 @@ enum TokeniserState {
     },
     ScriptDataEscapedEndTagOpen {
         @Override void read(Tokeniser t, CharacterReader r) {
-            if (r.matchesAsciiAlpha()) {
-                t.createTagPending(false);
-                t.tagPending.appendTagName(r.current());
-                t.dataBuffer.append(r.current());
-                t.advanceTransition(ScriptDataEscapedEndTagName);
-            } else {
-                t.emit("</");
-                t.transition(ScriptDataEscaped);
-            }
+            readEndTag(t, r, ScriptDataEscapedEndTagName, ScriptDataEscaped);
         }
     },
     ScriptDataEscapedEndTagName {
@@ -701,49 +647,40 @@ enum TokeniserState {
     },
     BeforeAttributeValue {
         @Override void read(Tokeniser t, CharacterReader r) {
-            char c = r.consume();
+            char c = r.current();
             switch (c) {
                 case '\t':
                 case '\n':
                 case '\r':
                 case '\f':
                 case ' ':
+                    r.advance();
                     // ignore
                     break;
                 case '"':
+                    r.advance();
                     t.transition(AttributeValue_doubleQuoted);
                     break;
-                case '&':
-                    r.unconsume();
-                    t.transition(AttributeValue_unquoted);
-                    break;
                 case '\'':
+                    r.advance();
                     t.transition(AttributeValue_singleQuoted);
-                    break;
-                case nullChar:
-                    t.error(this);
-                    t.tagPending.appendAttributeValue(replacementChar, r.pos()-1, r.pos());
-                    t.transition(AttributeValue_unquoted);
                     break;
                 case eof:
                     t.eofError(this);
-                    t.emitTagPending();
+                    // follow html spec at eof and drop; but in xml we keep:
+                    if (t.syntax == xml && !t.attributeFragment)
+                        t.emitTagPending();
+                    else
+                        t.emit(new Token.EOF());
                     t.transition(Data);
                     break;
                 case '>':
                     t.error(this);
+                    r.advance();
                     t.emitTagPending();
                     t.transition(Data);
                     break;
-                case '<':
-                case '=':
-                case '`':
-                    t.error(this);
-                    t.tagPending.appendAttributeValue(c, r.pos()-1, r.pos());
-                    t.transition(AttributeValue_unquoted);
-                    break;
                 default:
-                    r.unconsume();
                     t.transition(AttributeValue_unquoted);
             }
         }
@@ -764,7 +701,7 @@ enum TokeniserState {
                     t.transition(AfterAttributeValue_quoted);
                     break;
                 case '&':
-                    int[] ref = t.consumeCharacterReference('"', true);
+                    int[] ref = t.consumeCharacterReference('"', true, false);
                     if (ref != null)
                         t.tagPending.appendAttributeValue(ref, pos, r.pos());
                     else
@@ -799,7 +736,7 @@ enum TokeniserState {
                     t.transition(AfterAttributeValue_quoted);
                     break;
                 case '&':
-                    int[] ref = t.consumeCharacterReference('\'', true);
+                    int[] ref = t.consumeCharacterReference('\'', true, false);
                     if (ref != null)
                         t.tagPending.appendAttributeValue(ref, pos, r.pos());
                     else
@@ -836,7 +773,7 @@ enum TokeniserState {
                     t.transition(BeforeAttributeName);
                     break;
                 case '&':
-                    int[] ref = t.consumeCharacterReference('>', true);
+                    int[] ref = t.consumeCharacterReference('>', true, false);
                     if (ref != null)
                         t.tagPending.appendAttributeValue(ref, pos, r.pos());
                     else
@@ -926,8 +863,13 @@ enum TokeniserState {
     BogusComment {
         @Override void read(Tokeniser t, CharacterReader r) {
             // todo: handle bogus comment starting from eof. when does that trigger?
-            t.commentPending.append(r.consumeTo('>'));
-            // todo: replace nullChar with replaceChar
+            t.commentPending.append(r.consumeToAny('>', nullChar));
+            if (r.current() == nullChar) {
+                t.error(this);
+                r.advance();
+                t.commentPending.append(replacementChar);
+                return;
+            }
             char next = r.current();
             if (next == '>' || next == eof) {
                 r.consume();
@@ -944,11 +886,15 @@ enum TokeniserState {
             } else if (r.matchConsumeIgnoreCase("DOCTYPE")) {
                 t.transition(Doctype);
             } else if (r.matchConsume("[CDATA[")) {
-                // todo: should actually check current namespace, and only non-html allows cdata. until namespace
-                // is implemented properly, keep handling as cdata
-                //} else if (!t.currentNodeInHtmlNS() && r.matchConsume("[CDATA[")) {
-                t.createTempBuffer();
-                t.transition(CdataSection);
+                if (t.isCdataAllowed()) {
+                    t.createTempBuffer();
+                    t.transition(CdataSection);
+                } else {
+                    t.error(this);
+                    t.createBogusCommentPending();
+                    t.commentPending.append("[CDATA[");
+                    t.transition(BogusComment);
+                }
             } else {
                 if (t.syntax == xml && r.matchesAsciiAlpha()) {
                     t.createXmlDeclPending(true);
@@ -961,16 +907,117 @@ enum TokeniserState {
             }
         }
     },
-    MarkupProcessingOpen { // From <? in syntax XML
+    // HTML's processing-instruction states are also used for XML, with broader targets and a required ?> close.
+    ProcessingInstructionOpen {
         @Override void read(Tokeniser t, CharacterReader r) {
-            if (r.matchesAsciiAlpha()) {
-                t.createXmlDeclPending(false);
-                t.transition(TagName); // treat <?xml... as XML Declaration (processing instruction), with tag-like handling
+            if (t.syntax == xml) {
+                if (r.isEmpty()) {
+                    t.eofError(this);
+                    t.emit(new Token.EOF());
+                } else {
+                    t.createPiPending();
+                    t.transition(ProcessingInstructionTarget);
+                }
+            } else if (r.matchesAsciiAlpha() || r.matches('_')) {
+                t.createPiPending();
+                t.transition(ProcessingInstructionTarget);
+            } else if (r.isEmpty()) {
+                t.eofError(this);
+                t.emit(new Token.EOF());
             } else {
                 t.error(this);
                 t.createBogusCommentPending();
-                t.commentPending.append('?'); // push the ? to the start of the comment
+                t.commentPending.append('?');
                 t.transition(BogusComment);
+            }
+        }
+    },
+    ProcessingInstructionTarget {
+        @Override void read(Tokeniser t, CharacterReader r) {
+            char c = r.current();
+            if (isProcessingInstructionWhitespace(t, c) || c == '?' || c == '>') {
+                String target = t.piPending.target();
+                if (t.syntax == xml) {
+                    if (target.isEmpty() || c == '>') {
+                        t.error(this);
+                        t.createBogusCommentPending();
+                        t.commentPending.append('?').append(target);
+                        t.transition(BogusComment);
+                    } else if (equalsIgnoreAsciiCase(target, "xml")) {
+                        // XML declarations retain their attribute-backed XmlDeclaration representation
+                        Token.XmlDecl decl = t.createXmlDeclPending(false);
+                        decl.name(target);
+                        t.transition(BeforeAttributeName);
+                    } else if (c == '?') {
+                        t.piPending.dataStartPos = r.pos();
+                        r.advance();
+                        t.transition(ProcessingInstructionQuestionable);
+                    } else {
+                        t.transition(AfterProcessingInstructionTarget);
+                    }
+                } else {
+                    if (equalsIgnoreAsciiCase(target, "xml") || equalsIgnoreAsciiCase(target, "xml-stylesheet")) {
+                        t.error(this);
+                        t.createBogusCommentPending();
+                        t.commentPending.append('?').append(target);
+                        t.transition(BogusComment);
+                    } else {
+                        t.transition(AfterProcessingInstructionTarget);
+                    }
+                }
+            } else if (r.isEmpty()) {
+                t.eofError(this);
+                t.emit(new Token.EOF());
+            } else if (t.syntax == xml || isHtmlProcessingInstructionTarget(c)) {
+                t.piPending.target.append(r.consume());
+            } else {
+                t.error(this);
+                t.createBogusCommentPending();
+                t.commentPending.append('?').append(t.piPending.target());
+                t.transition(BogusComment);
+            }
+        }
+    },
+    AfterProcessingInstructionTarget {
+        @Override void read(Tokeniser t, CharacterReader r) {
+            if (isProcessingInstructionWhitespace(t, r.current()))
+                r.advance();
+            else {
+                t.piPending.dataStartPos = r.pos();
+                t.transition(ProcessingInstructionData);
+            }
+        }
+    },
+    ProcessingInstructionData {
+        @Override void read(Tokeniser t, CharacterReader r) {
+            char c = r.current();
+            if (c == '?') {
+                r.advance();
+                t.transition(ProcessingInstructionQuestionable);
+            } else if (t.syntax != xml && c == '>') {
+                r.advance();
+                t.transition(Data);
+                t.emitPiPending();
+            } else if (r.isEmpty()) {
+                t.eofError(this);
+                t.emit(new Token.EOF());
+            } else {
+                t.piPending.append(r.consume());
+            }
+        }
+    },
+    ProcessingInstructionQuestionable {
+        @Override void read(Tokeniser t, CharacterReader r) {
+            if (r.matches('>')) {
+                r.advance();
+                t.transition(Data);
+                t.emitPiPending();
+            } else if (r.isEmpty()) {
+                t.eofError(this);
+                t.emit(new Token.EOF());
+            } else {
+                t.piPending.append('?');
+                t.transition(ProcessingInstructionData);
             }
         }
     },
@@ -1004,18 +1051,15 @@ enum TokeniserState {
     },
     CommentStartDash {
         @Override void read(Tokeniser t, CharacterReader r) {
-            char c = r.consume();
+            char c = r.current();
             switch (c) {
                 case '-':
+                    r.advance();
                     t.transition(CommentEnd);
-                    break;
-                case nullChar:
-                    t.error(this);
-                    t.commentPending.append(replacementChar);
-                    t.transition(Comment);
                     break;
                 case '>':
                     t.error(this);
+                    r.advance();
                     t.emitCommentPending();
                     t.transition(Data);
                     break;
@@ -1025,7 +1069,7 @@ enum TokeniserState {
                     t.transition(Data);
                     break;
                 default:
-                    t.commentPending.append(c);
+                    t.commentPending.append('-');
                     t.transition(Comment);
             }
         }
@@ -1135,20 +1179,20 @@ enum TokeniserState {
     },
     Doctype {
         @Override void read(Tokeniser t, CharacterReader r) {
-            char c = r.consume();
+            char c = r.current();
             switch (c) {
                 case '\t':
                 case '\n':
                 case '\r':
                 case '\f':
                 case ' ':
-                    t.transition(BeforeDoctypeName);
+                    t.advanceTransition(BeforeDoctypeName);
+                    break;
+                case '>':
+                    t.transition(BeforeDoctypeName); // reconsume to report the missing name
                     break;
                 case eof:
                     t.eofError(this);
-                    // note: fall through to > case
-                case '>': // catch invalid <!DOCTYPE>
-                    t.error(this);
                     t.createDoctypePending();
                     t.doctypePending.forceQuirks = true;
                     t.emitDoctypePending();
@@ -1167,19 +1211,28 @@ enum TokeniserState {
                 t.transition(DoctypeName);
                 return;
             }
-            char c = r.consume();
+            char c = r.current();
             switch (c) {
                 case '\t':
                 case '\n':
                 case '\r':
                 case '\f':
                 case ' ':
+                    r.advance();
                     break; // ignore whitespace
                 case nullChar:
                     t.error(this);
                     t.createDoctypePending();
                     t.doctypePending.name.append(replacementChar);
-                    t.transition(DoctypeName);
+                    t.advanceTransition(DoctypeName);
+                    break;
+                case '>':
+                    t.error(this);
+                    t.createDoctypePending();
+                    t.doctypePending.forceQuirks = true;
+                    r.advance();
+                    t.emitDoctypePending();
+                    t.transition(Data);
                     break;
                 case eof:
                     t.eofError(this);
@@ -1191,7 +1244,7 @@ enum TokeniserState {
                 default:
                     t.createDoctypePending();
                     t.doctypePending.name.append(c);
-                    t.transition(DoctypeName);
+                    t.advanceTransition(DoctypeName);
             }
         }
     },
@@ -1244,6 +1297,10 @@ enum TokeniserState {
             else if (r.matches('>')) {
                 t.emitDoctypePending();
                 t.advanceTransition(Data);
+            } else if (t.syntax == xml && r.matches('[')) {
+                // special case when in XML parse mode so we can support entity round trop
+                t.doctypePending.sawInternalSubset = true;
+                t.advanceTransition(DoctypeInternalSubset);
             } else if (r.matchConsumeIgnoreCase(DocumentType.PUBLIC_KEY)) {
                 t.doctypePending.pubSysKey = DocumentType.PUBLIC_KEY;
                 t.transition(AfterDoctypePublicKeyword);
@@ -1253,7 +1310,7 @@ enum TokeniserState {
             } else {
                 t.error(this);
                 t.doctypePending.forceQuirks = true;
-                t.advanceTransition(BogusDoctype);
+                t.transition(BogusDoctype);
             }
 
         }
@@ -1292,6 +1349,7 @@ enum TokeniserState {
                     t.transition(Data);
                     break;
                 default:
+                    r.unconsume();
                     t.error(this);
                     t.doctypePending.forceQuirks = true;
                     t.transition(BogusDoctype);
@@ -1329,6 +1387,7 @@ enum TokeniserState {
                     t.transition(Data);
                     break;
                 default:
+                    r.unconsume();
                     t.error(this);
                     t.doctypePending.forceQuirks = true;
                     t.transition(BogusDoctype);
@@ -1423,6 +1482,7 @@ enum TokeniserState {
                     t.transition(Data);
                     break;
                 default:
+                    r.unconsume();
                     t.error(this);
                     t.doctypePending.forceQuirks = true;
                     t.transition(BogusDoctype);
@@ -1443,13 +1503,22 @@ enum TokeniserState {
                     t.emitDoctypePending();
                     t.transition(Data);
                     break;
-                case '"':
+                case '[':
+                    if (t.syntax == xml) {
+                        t.doctypePending.sawInternalSubset = true;
+                        t.transition(DoctypeInternalSubset);
+                        break;
+                    }
+                    r.unconsume();
                     t.error(this);
+                    t.doctypePending.forceQuirks = true;
+                    t.transition(BogusDoctype);
+                    break;
+                case '"':
                     // system id empty
                     t.transition(DoctypeSystemIdentifier_doubleQuoted);
                     break;
                 case '\'':
-                    t.error(this);
                     // system id empty
                     t.transition(DoctypeSystemIdentifier_singleQuoted);
                     break;
@@ -1460,6 +1529,7 @@ enum TokeniserState {
                     t.transition(Data);
                     break;
                 default:
+                    r.unconsume();
                     t.error(this);
                     t.doctypePending.forceQuirks = true;
                     t.transition(BogusDoctype);
@@ -1500,9 +1570,10 @@ enum TokeniserState {
                     t.transition(Data);
                     break;
                 default:
+                    r.unconsume();
                     t.error(this);
                     t.doctypePending.forceQuirks = true;
-                    t.emitDoctypePending();
+                    t.transition(BogusDoctype);
             }
         }
     },
@@ -1521,7 +1592,7 @@ enum TokeniserState {
                     t.transition(DoctypeSystemIdentifier_doubleQuoted);
                     break;
                 case '\'':
-                    // set public id to empty string
+                    // set system id to empty string
                     t.transition(DoctypeSystemIdentifier_singleQuoted);
                     break;
                 case '>':
@@ -1537,6 +1608,7 @@ enum TokeniserState {
                     t.transition(Data);
                     break;
                 default:
+                    r.unconsume();
                     t.error(this);
                     t.doctypePending.forceQuirks = true;
                     t.transition(BogusDoctype);
@@ -1613,6 +1685,17 @@ enum TokeniserState {
                     t.emitDoctypePending();
                     t.transition(Data);
                     break;
+                case '[':
+                    if (t.syntax == xml) {
+                        t.doctypePending.sawInternalSubset = true;
+                        t.transition(DoctypeInternalSubset);
+                        break;
+                    }
+                    r.unconsume();
+                    t.error(this);
+                    t.transition(BogusDoctype);
+                    // NOT force quirks
+                    break;
                 case eof:
                     t.eofError(this);
                     t.doctypePending.forceQuirks = true;
@@ -1620,6 +1703,7 @@ enum TokeniserState {
                     t.transition(Data);
                     break;
                 default:
+                    r.unconsume();
                     t.error(this);
                     t.transition(BogusDoctype);
                     // NOT force quirks
@@ -1628,30 +1712,46 @@ enum TokeniserState {
     },
     BogusDoctype {
         @Override void read(Tokeniser t, CharacterReader r) {
-            char c = r.consume();
+            char c = r.current();
             switch (c) {
                 case '>':
+                    r.advance();
                     t.emitDoctypePending();
                     t.transition(Data);
+                    break;
+                case nullChar:
+                    t.error(this);
+                    r.advance();
                     break;
                 case eof:
                     t.emitDoctypePending();
                     t.transition(Data);
                     break;
                 default:
-                    // ignore char
-                    break;
+                    r.advance(); // ignore char
             }
+        }
+    },
+    DoctypeInternalSubset {
+        @Override void read(Tokeniser t, CharacterReader r) {
+            readDoctypeInternalSubset(t, r, this);
         }
     },
     CdataSection {
         @Override void read(Tokeniser t, CharacterReader r) {
-            String data = r.consumeTo("]]>");
+            String data = r.consumeToAny(']', nullChar);
             t.dataBuffer.append(data);
+            if (r.current() == nullChar) {
+                if (t.syntax != xml) t.error(this);
+                t.dataBuffer.append(r.consume()); // tree building decides whether to replace or remove nulls
+                return;
+            }
             if (r.matchConsume("]]>") || r.isEmpty()) {
                 t.emit(new Token.CData(t.dataBuffer.value()));
                 t.transition(Data);
-            }// otherwise, buffer underrun, stay in data section
+            } else if (r.matches(']')) {
+                t.dataBuffer.append(r.consume());
+            } // otherwise, buffer underrun, stay in data section
         }
     };
 
@@ -1667,49 +1767,53 @@ enum TokeniserState {
     private static final String replacementStr = String.valueOf(Tokeniser.replacementChar);
     private static final char eof = CharacterReader.EOF;
 
-    /**
-     * Handles RawtextEndTagName, ScriptDataEndTagName, and ScriptDataEscapedEndTagName. Same body impl, just
-     * different else exit transitions.
-     */
+    /** Handles the common RCDATA, RAWTEXT, and script-data end tag name states. */
     private static void handleDataEndTag(Tokeniser t, CharacterReader r, TokeniserState elseTransition) {
         if (r.matchesAsciiAlpha()) {
-            String name = r.consumeTagName();
+            String name = r.consumeLetterSequence();
             t.tagPending.appendTagName(name);
-            t.dataBuffer.append(name);
             return;
         }
 
-        boolean needsExitTransition = false;
+        if (!r.isEmpty()) {
+            char c = r.current();
+            if (isCustomEndTagNameChar(c) && t.isAppropriateEndTagPrefix(c)) {
+                r.advance();
+                t.tagPending.appendTagName(c);
+                return;
+            }
+        }
+
         if (t.isAppropriateEndTagToken() && !r.isEmpty()) {
-            char c = r.consume();
-            switch (c) {
+            switch (r.current()) {
                 case '\t':
                 case '\n':
                 case '\r':
                 case '\f':
                 case ' ':
+                    r.advance();
                     t.transition(BeforeAttributeName);
-                    break;
+                    return;
                 case '/':
+                    r.advance();
                     t.transition(SelfClosingStartTag);
-                    break;
+                    return;
                 case '>':
+                    r.advance();
                     t.emitTagPending();
                     t.transition(Data);
-                    break;
-                default:
-                    t.dataBuffer.append(c);
-                    needsExitTransition = true;
+                    return;
             }
-        } else {
-            needsExitTransition = true;
         }
 
-        if (needsExitTransition) {
-            t.emit("</");
-            t.emit(t.dataBuffer.value());
-            t.transition(elseTransition);
-        }
+        t.emit("</");
+        t.emit(t.tagPending.name());
+        t.transition(elseTransition); // reconsume the current character in the text state
+    }
+
+    /** Test if the character may extend a configured custom text tag name. */
+    private static boolean isCustomEndTagNameChar(char c) {
+        return c != '<' && c != '/' && c != '>' && !StringUtil.isWhitespace(c);
     }
 
     private static void readRawData(Tokeniser t, CharacterReader r, TokeniserState current, TokeniserState advance) {
@@ -1733,7 +1837,7 @@ enum TokeniserState {
     }
 
     private static void readCharRef(Tokeniser t, TokeniserState advance) {
-        int[] c = t.consumeCharacterReference(null, false);
+        int[] c = t.consumeCharacterReference(null, false, false);
         if (c == null)
             t.emit('&');
         else
@@ -1741,20 +1845,21 @@ enum TokeniserState {
         t.transition(advance);
     }
 
-    private static void readEndTag(Tokeniser t, CharacterReader r, TokeniserState a, TokeniserState b) {
+    /** Starts a text end tag candidate, or returns to its text state. */
+    private static void readEndTag(Tokeniser t, CharacterReader r, TokeniserState endTagNameState, TokeniserState textState) {
         if (r.matchesAsciiAlpha()) {
             t.createTagPending(false);
-            t.transition(a);
+            t.transition(endTagNameState);
         } else {
             t.emit("</");
-            t.transition(b);
+            t.transition(textState);
         }
     }
 
     private static void handleDataDoubleEscapeTag(Tokeniser t, CharacterReader r, TokeniserState primary, TokeniserState fallback) {
         if (r.matchesAsciiAlpha()) {
             String name = r.consumeLetterSequence();
-            t.dataBuffer.append(name);
+            t.dataBuffer.append(Normalizer.asciiLowerCase(name));
             t.emit(name);
             return;
         }
@@ -1777,6 +1882,96 @@ enum TokeniserState {
             default:
                 r.unconsume();
                 t.transition(fallback);
+        }
+    }
+
+    /** Tests whether this character separates a processing-instruction target and data in the current syntax. */
+    private static boolean isProcessingInstructionWhitespace(Tokeniser tokeniser, char c) {
+        return c == '\t' || c == '\n' || c == '\r' || c == ' ' || tokeniser.syntax != xml && c == '\f';
+    }
+
+    /** Returns whether this character may continue an HTML processing instruction target. */
+    private static boolean isHtmlProcessingInstructionTarget(char c) {
+        return c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '_';
+    }
+
+    /**
+     Reads an XML doctype internal subset as opaque text so it can be re-emitted without parsing declarations.
+     Only used when in XML mode; HTML spec will drop these as Bogus.
+     */
+    private static void readDoctypeInternalSubset(Tokeniser t, CharacterReader r, TokeniserState current) {
+        final byte None = 0, SingleQuote = 1, DoubleQuote = 2, Comment = 3, ProcessingInstruction = 4;
+        byte context = None;
+        TokenData subset = t.doctypePending.internalSubset;
+
+        while (true) {
+            char c = r.consume();
+            switch (c) {
+                case '\'':
+                    subset.append(c);
+                    if  (context == None) context = SingleQuote;
+                    else if (context == SingleQuote) context = None;
+                    break;
+                case '"':
+                    subset.append(c);
+                    if (context == None) context = DoubleQuote;
+                    else if (context == DoubleQuote) context = None;
+                    break;
+                case '<':
+                    subset.append(c);
+                    if (context == None) {
+                        if (r.matchConsume("!--")) {
+                            subset.append("!--");
+                            context = Comment;
+                        } else if (r.matchConsume("?")) {
+                            subset.append('?');
+                            context = ProcessingInstruction;
+                        }
+                    }
+                    break;
+                case '-':
+                    subset.append(c);
+                    if (context == Comment && r.matchConsume("->")) {
+                        subset.append("->");
+                        context = None;
+                    }
+                    break;
+                case '?':
+                    subset.append(c);
+                    if (context == ProcessingInstruction && r.matches('>')) {
+                        r.advance();
+                        subset.append('>');
+                        context = None;
+                    }
+                    break;
+                case ']':
+                    if (context == None) {
+                        String ws = r.consumeMatching(StringUtil::isWhitespace);
+                        if (r.matches('>')) {
+                            r.advance();
+                            t.emitDoctypePending();
+                            t.transition(Data);
+                            return;
+                        }
+                        subset.append(c);
+                        subset.append(ws);
+                        break;
+                    }
+                    subset.append(c);
+                    break;
+                case nullChar:
+                    t.error(current);
+                    subset.append(replacementChar);
+                    break;
+                case eof:
+                    t.eofError(current);
+                    t.emitDoctypePending();
+                    t.transition(Data);
+                    return;
+                default:
+                    subset.append(c);
+                    break;
+            }
         }
     }
 }

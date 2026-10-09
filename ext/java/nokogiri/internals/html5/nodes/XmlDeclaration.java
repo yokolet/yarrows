@@ -1,6 +1,7 @@
 package nokogiri.internals.html5.nodes;
 
 import org.w3c.dom.DOMException;
+
 import nokogiri.internals.html5.internal.QuietAppendable;
 import nokogiri.internals.html5.internal.StringUtil;
 
@@ -10,20 +11,17 @@ import nokogiri.internals.html5.internal.StringUtil;
  */
 public class XmlDeclaration extends LeafNode {
 
-    /**
-     First char is `!` if isDeclaration, like in {@code  <!ENTITY ...>}.
-     Otherwise, is `?`, a processing instruction, like {@code <?xml .... ?>} (and note trailing `?`).
-     */
-    private final boolean isDeclaration;
+    /** Whether this is a markup declaration. */
+    private final boolean isMarkupDeclaration;
 
     /**
      * Create a new XML declaration
      * @param name of declaration
-     * @param isDeclaration {@code true} if a declaration (first char is `!`), otherwise a processing instruction (first char is `?`).
+     * @param isMarkupDeclaration {@code true} if a declaration (first char is `!`), otherwise a processing instruction (first char is `?`).
      */
-    public XmlDeclaration(String name, boolean isDeclaration) {
+    public XmlDeclaration(String name, boolean isMarkupDeclaration) {
         super(name);
-        this.isDeclaration = isDeclaration;
+        this.isMarkupDeclaration = isMarkupDeclaration;
     }
 
     // w3c Node methods
@@ -78,13 +76,13 @@ public class XmlDeclaration extends LeafNode {
     @Override
     void outerHtmlHead(QuietAppendable accum, Document.OutputSettings out) {
         accum
-            .append("<")
-            .append(isDeclaration ? "!" : "?")
-            .append(coreValue());
+                .append("<")
+                .append(isMarkupDeclaration ? "!" : "?")
+                .append(coreValue());
         getWholeDeclaration(accum, out);
         accum
-            .append(isDeclaration ? "" : "?")
-            .append(">");
+                .append(isMarkupDeclaration ? "" : "?")
+                .append(">");
     }
 
     @Override

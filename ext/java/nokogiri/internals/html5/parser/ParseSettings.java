@@ -1,16 +1,18 @@
 package nokogiri.internals.html5.parser;
 
+import nokogiri.internals.html5.internal.StringUtil;
 import nokogiri.internals.html5.nodes.Attributes;
 
-import static nokogiri.internals.html5.internal.Normalizer.lowerCase;
-import static nokogiri.internals.html5.internal.Normalizer.normalize;
+import static nokogiri.internals.html5.internal.Normalizer.asciiLowerCase;
 
 /**
  * Controls parser case settings, to optionally preserve tag and/or attribute name case.
+ * Case conversion uses ASCII rules.
+ * Programmatic name normalization also trims surrounding ASCII whitespace.
  */
 public class ParseSettings {
     /**
-     * HTML default settings: both tag and attribute names are lower-cased during parsing.
+     * HTML defaults: lower-case tag and attribute names.
      */
     public static final ParseSettings htmlDefault;
     /**
@@ -25,9 +27,6 @@ public class ParseSettings {
 
     private final boolean preserveTagCase;
     private final boolean preserveAttributeCase;
-
-    // supports Nokogiri parser options
-    private boolean noscriptContentAsText = false;
 
     /**
      * Returns true if preserving tag name case.
@@ -58,22 +57,22 @@ public class ParseSettings {
     }
 
     /**
-     * Normalizes a tag name according to the case preservation setting.
+     * Normalizes a tag name according to these settings.
      */
     public String normalizeTag(String name) {
-        name = name.trim();
+        name = StringUtil.trimAsciiWhitespace(name);
         if (!preserveTagCase)
-            name = lowerCase(name);
+            name = asciiLowerCase(name);
         return name;
     }
 
     /**
-     * Normalizes an attribute according to the case preservation setting.
+     * Normalizes an attribute name according to these settings.
      */
     public String normalizeAttribute(String name) {
-        name = name.trim();
+        name = StringUtil.trimAsciiWhitespace(name);
         if (!preserveAttributeCase)
-            name = lowerCase(name);
+            name = asciiLowerCase(name);
         return name;
     }
 
@@ -81,18 +80,5 @@ public class ParseSettings {
         if (!preserveAttributeCase) {
             attributes.normalize();
         }
-    }
-
-    /** Returns the normal name that a Tag will have (trimmed and lower-cased) */
-    static String normalName(String name) {
-        return normalize(name);
-    }
-
-    public void setNoscriptContentAsText(boolean value) {
-        noscriptContentAsText = value;
-    }
-
-    public boolean noscriptContentAsText() {
-        return noscriptContentAsText;
     }
 }

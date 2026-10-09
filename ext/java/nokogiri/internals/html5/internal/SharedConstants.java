@@ -6,9 +6,8 @@ package nokogiri.internals.html5.internal;
  */
 public final class SharedConstants {
     public static final String UserDataKey = "/jsoup.userdata";
+    public static final String RangeSpansKey = "/jsoup.spans";
     public final static String AttrRangeKey = "jsoup.attrs";
-    public static final String RangeKey = "jsoup.start";
-    public static final String EndRangeKey = "jsoup.end";
     public static final String XmlnsAttr = "jsoup.xmlns-";
 
     public static final int DefaultBufferSize = 8 * 1024;

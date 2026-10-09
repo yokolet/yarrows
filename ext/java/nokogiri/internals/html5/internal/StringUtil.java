@@ -1,6 +1,5 @@
 package nokogiri.internals.html5.internal;
 
-import nokogiri.internals.html5.helper.Validate;
 import org.jspecify.annotations.Nullable;
 
 import java.net.MalformedURLException;
@@ -11,6 +10,8 @@ import java.util.Iterator;
 import java.util.regex.Pattern;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
+
+import nokogiri.internals.html5.helper.Validate;
 
 /**
  A minimal String utility class. Designed for <b>internal</b> jsoup use only - the API and outcome may change without
@@ -188,6 +189,14 @@ public final class StringUtil {
         return true;
     }
 
+    /** Trims leading and trailing ASCII whitespace. */
+    public static String trimAsciiWhitespace(String input) {
+        int start = 0, end = input.length();
+        while (start < end && isWhitespace(input.charAt(start))) start++;
+        while (end > start && isWhitespace(input.charAt(end - 1))) end--;
+        return input.substring(start, end);
+    }
+
     /**
      * Tests if a code point is "whitespace" as defined in the HTML spec. Used for output HTML.
      * @param c code point to test
@@ -340,6 +349,18 @@ public final class StringUtil {
     private static final int MaxBuilderSize = 8 * 1024;
     private static final SoftPool<StringBuilder> BuilderPool = new SoftPool<>(
         () -> new StringBuilder(InitBuilderSize));
+
+    /**
+     Concatenates a character and string using a pooled builder.
+     @param first the leading character
+     @param second the following string
+     @return the concatenated string
+     */
+    public static String concat(char first, String second) {
+        StringBuilder builder = borrowBuilder();
+        builder.append(first).append(second);
+        return releaseBuilder(builder);
+    }
 
     /**
      * Maintains cached StringBuilders in a flyweight pattern, to minimize new StringBuilder GCs. The StringBuilder is

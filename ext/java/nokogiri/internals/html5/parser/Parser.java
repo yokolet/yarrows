@@ -1,6 +1,7 @@
 package nokogiri.internals.html5.parser;
 
 import nokogiri.internals.html5.helper.Validate;
+import nokogiri.internals.html5.nodes.Attributes;
 import nokogiri.internals.html5.nodes.Document;
 import nokogiri.internals.html5.nodes.Element;
 import nokogiri.internals.html5.nodes.Node;
@@ -13,7 +14,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 /**
  Parses HTML or XML into a {@link nokogiri.internals.html5.nodes.Document}. Generally, it is simpler to use one of the parse methods in
- {@link nokogiri.internals.html5.parser.Parser}.
+ {@link nokogiri.internals.html5 }.
  <p>Note that a given Parser instance object is threadsafe, but not concurrent. (Concurrent parse calls will
  synchronize.) To reuse a Parser configuration in a multithreaded environment, use {@link #newInstance()} to make
  copies.</p>
@@ -89,6 +90,24 @@ public class Parser implements Cloneable {
         try {
             lock.lock(); // using a lock vs synchronized to support loom threads
             return treeBuilder.parse(inputHtml, baseUri, this);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     Parses attribute names and values without a surrounding tag, using this parser's settings.
+     Parsing stops at a tag closer, which is reported if error tracking is enabled.
+
+     @param input the attribute string to parse
+     @return the parsed attributes
+     @see #setTrackErrors(int)
+     @since 1.24.1
+     */
+    public Attributes parseAttributes(String input) {
+        try {
+            lock.lock();
+            return treeBuilder.parseAttributes(new StringReader(input), this);
         } finally {
             lock.unlock();
         }
@@ -200,8 +219,7 @@ public class Parser implements Cloneable {
 
     /**
      Set the parser's maximum stack depth (maximum number of open elements). When reached, new open elements will be
-     removed to prevent excessive nesting. Defaults to 512 for the HTML parser, and unlimited for the XML
-     parser.
+     removed to prevent excessive nesting. Defaults to 512.
 
      @param maxDepth maximum parser depth; must be >= 1
      @return this Parser, for chaining
@@ -376,6 +394,6 @@ public class Parser implements Cloneable {
      * @return a new simple XML parser.
      */
     public static Parser xmlParser() {
-        return new Parser(new XmlTreeBuilder()).setMaxDepth(Integer.MAX_VALUE);
+        return new Parser(new XmlTreeBuilder());
     }
 }

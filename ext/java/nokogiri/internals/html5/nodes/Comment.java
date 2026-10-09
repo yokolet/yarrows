@@ -3,8 +3,8 @@ package nokogiri.internals.html5.nodes;
 import java.util.List;
 
 import org.jspecify.annotations.Nullable;
-
 import org.w3c.dom.DOMException;
+
 import nokogiri.internals.html5.internal.QuietAppendable;
 import nokogiri.internals.html5.parser.Parser;
 

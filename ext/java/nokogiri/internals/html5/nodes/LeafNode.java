@@ -72,17 +72,29 @@ public abstract class LeafNode extends Node implements CharacterData {
         return (Attributes) value;
     }
 
-    private void ensureAttributes() {
-        if (value instanceof String) { // then value is String coreValue
-            String coreValue = (String) value;
-            Attributes attributes = new Attributes();
+    /** Expands this leaf's compact value into attribute storage when needed. */
+    final void ensureAttributes() {
+        if (!hasAttributes()) {
+            String coreValue = coreValue();
+            Range.Spans rangeSpans = spans();
+            Attributes attributes = newAttributes(coreValue);
             value = attributes;
-            attributes.put(nodeName(), coreValue);
+            if (rangeSpans != null)
+                attributes.putSpans(rangeSpans);
         }
     }
 
+    /** Expands this leaf's compact value into attribute storage. */
+    Attributes newAttributes(String coreValue) {
+        Attributes attributes = new Attributes();
+        attributes.put(nodeName(), coreValue);
+        return attributes;
+    }
+
     String coreValue() {
-        return attr(nodeName());
+        if (value instanceof Attributes)   return ((Attributes) value).get(nodeName());
+        if (value instanceof TrackedValue) return ((TrackedValue) value).coreValue;
+        return (String) value;
     }
 
     @Override @Nullable
@@ -96,19 +108,19 @@ public abstract class LeafNode extends Node implements CharacterData {
     }
 
     void coreValue(String value) {
-        attr(nodeName(), value);
+        if (this.value instanceof Attributes)
+            ((Attributes) this.value).put(nodeName(), value);
+        else if (this.value instanceof TrackedValue)
+            ((TrackedValue) this.value).coreValue = value;
+        else
+            this.value = value;
     }
 
     @Override
     public String attr(String key) {
-        if (value instanceof String) {
-            return nodeName().equals(key) ? (String) value : EmptyString;
-        }
-        if (value instanceof Attributes) {
-            String attrValue = ((Attributes) value).getIgnoreCase(key);
-            return (attrValue != null) ? attrValue : EmptyString;
-        }
-        return null;
+        if (!hasAttributes())
+            return nodeName().equals(key) ? coreValue() : EmptyString;
+        return super.attr(key);
     }
 
     @Override
@@ -172,10 +184,62 @@ public abstract class LeafNode extends Node implements CharacterData {
     protected LeafNode doClone(Node parent) {
         LeafNode clone = (LeafNode) super.doClone(parent);
 
-        // Object value could be plain string or attributes - need to clone
+        // Object value could be plain string, tracked string, or attributes - need to clone.
         if (hasAttributes())
             clone.value = ((Attributes) value).clone();
+        else if (value instanceof TrackedValue)
+            clone.value = ((TrackedValue) value).copy();
 
         return clone;
+    }
+
+    @Override Range.@Nullable Spans spans() {
+        if (value instanceof TrackedValue)
+            return ((TrackedValue) value).spans;
+        return super.spans();
+    }
+
+    @Override Range.Spans ensureSpans() {
+        // Leaf nodes normally hold just their core string. When source ranges are tracked, keep the string plus spans
+        // in a small wrapper so leaf nodes do not expand to Attributes just for parser metadata. If attributes are
+        // later requested, ensureAttributes() moves these same spans into the Attributes object.
+        if (value instanceof TrackedValue)
+            return ((TrackedValue) value).spans;
+        if (value instanceof Attributes)
+            return ((Attributes) value).ensureSpans();
+
+        TrackedValue trackedValue = new TrackedValue((String) value);
+        value = trackedValue;
+        return trackedValue.spans;
+    }
+
+    /**
+     Holds a compact leaf value plus ranges without expanding to Attributes.
+     */
+    private static final class TrackedValue {
+        String coreValue;
+        final Range.Spans spans;
+
+        /**
+         Creates a tracked leaf value around the core text.
+         */
+        TrackedValue(String coreValue) {
+            this(coreValue, new Range.Spans());
+        }
+
+        /**
+         Creates a tracked leaf value around copied range spans.
+         */
+        TrackedValue(String coreValue, Range.Spans spans) {
+            this.coreValue = coreValue;
+            this.spans = spans;
+        }
+
+        /**
+         Returns a copy so cloned leaf nodes can mutate range spans independently.
+         */
+        TrackedValue copy() {
+            return new TrackedValue(coreValue, spans.copy());
+        }
     }
 }

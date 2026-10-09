@@ -1,5 +1,13 @@
 package nokogiri.internals.html5.nodes;
 
+import java.nio.CharBuffer;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetEncoder;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+
 import nokogiri.internals.html5.helper.DataUtil;
 import nokogiri.internals.html5.internal.QuietAppendable;
 import nokogiri.internals.html5.internal.StringUtil;
@@ -7,13 +15,6 @@ import nokogiri.internals.html5.helper.Validate;
 import nokogiri.internals.html5.nodes.Document.OutputSettings;
 import nokogiri.internals.html5.parser.CharacterReader;
 import nokogiri.internals.html5.parser.Parser;
-
-import java.nio.charset.Charset;
-import java.nio.charset.CharsetEncoder;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
 
 import static nokogiri.internals.html5.nodes.Entities.EscapeMode.base;
 import static nokogiri.internals.html5.nodes.Entities.EscapeMode.extended;
@@ -339,15 +340,22 @@ public class Entities {
      * Alterslash: 3013, 28
      * Jsoup: 167, 2
      */
-    private static boolean canEncode(final CoreCharset charset, final char c, final CharsetEncoder fallback) {
+    private static boolean canEncode(final CoreCharset charset, final int codePoint, final CharsetEncoder fallback) {
         // todo add more charset tests if impacted by Android's bad perf in canEncode
         switch (charset) {
             case ascii:
-                return c < 0x80;
+                return codePoint < 0x80;
             case utf:
-                return !(c >= Character.MIN_SURROGATE && c < (Character.MAX_SURROGATE + 1)); // !Character.isSurrogate(c); but not in Android 10 desugar
+                // reject unpaired UTF-16 surrogate code units; valid supplementary code points are outside this range
+                return codePoint < Character.MIN_SURROGATE || codePoint > Character.MAX_SURROGATE;
             default:
-                return fallback.canEncode(c);
+                if (codePoint < Character.MIN_SUPPLEMENTARY_CODE_POINT)
+                    return fallback.canEncode((char) codePoint);
+
+                // check the complete UTF-16 pair; checking only the low 16 bits could accept an unencodable code point
+                char[] chars = charBuf.get();
+                int len = Character.toChars(codePoint, chars, 0);
+                return fallback.canEncode(CharBuffer.wrap(chars, 0, len));
         }
     }
 

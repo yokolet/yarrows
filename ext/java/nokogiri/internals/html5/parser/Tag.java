@@ -1,14 +1,18 @@
 package nokogiri.internals.html5.parser;
 
+import nokogiri.internals.html5.helper.Validate;
+import nokogiri.internals.html5.internal.StringUtil;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
 
+import static nokogiri.internals.html5.internal.Normalizer.asciiLowerCase;
 import static nokogiri.internals.html5.parser.Parser.NamespaceHtml;
 
 /**
  A Tag represents an Element's name and configured options, common throughout the Document. Options may affect the parse
  and output.
+ <p>A tag's normalized name uses ASCII lowercase; other characters are unchanged.</p>
 
  @see TagSet
  @see Parser#tagSet(TagSet) */
@@ -20,7 +24,7 @@ public class Tag implements Cloneable {
     public static int Void = 1 << 1;
     /** Tag option: the tag is a block tag (e.g., {@code <div>}, {@code <p>}). Causes the element to be indented when pretty-printing. If not a block, it is inline. */
     public static int Block = 1 << 2;
-    /** Tag option: the tag is a block tag that will only hold inline tags (e.g., {@code <p>}); used for formatting. (Must also set Block.) */
+    /** Tag option: pretty-print hint for block tags whose inline children should stay inline. (Must also set Block.) */
     public static int InlineContainer = 1 << 3;
     /** Tag option: the tag can self-close (e.g., {@code <foo />}). */
     public static int SelfClose = 1 << 4;
@@ -34,11 +38,14 @@ public class Tag implements Cloneable {
     public static int Data = 1 << 8;
     /** Tag option: the tag's value will be included when submitting a form (e.g., {@code <input>}). */
     public static int FormSubmittable = 1 << 9;
+    /** Tag option: readable text boundary for {@code Element.text()}, used for controls, widgets, and embedded objects. */
+    public static int TextBoundary = 1 << 10;
 
     String namespace;
     String tagName;
     String normalName; // always the lower case version of this tag, regardless of case preservation mode
     int options = 0;
+    private int parserOptions = 0; // internal tree-builder options; see HtmlTagOptions
 
     /**
      Create a new Tag, with the given name and namespace.
@@ -49,7 +56,7 @@ public class Tag implements Cloneable {
      @since 1.20.1
      */
     public Tag(String tagName, String namespace) {
-        this(tagName, ParseSettings.normalName(tagName), namespace);
+        this(tagName, asciiLowerCase(tagName), namespace);
     }
 
     /**
@@ -60,7 +67,7 @@ public class Tag implements Cloneable {
      @since 1.20.1
      */
     public Tag(String tagName) {
-        this(tagName, ParseSettings.normalName(tagName), NamespaceHtml);
+        this(tagName, asciiLowerCase(tagName), NamespaceHtml);
     }
 
     /** Path for TagSet defaults, no options set; normal name is already LC. */
@@ -68,6 +75,7 @@ public class Tag implements Cloneable {
         this.tagName = tagName;
         this.normalName = normalName;
         this.namespace = namespace;
+        setParserOptions();
     }
 
     /**
@@ -91,11 +99,14 @@ public class Tag implements Cloneable {
      Change the tag's name. As Tags are reused throughout a Document, this will change the name for all uses of this tag.
      @param tagName the new name of the tag. Case-sensitive.
      @return this tag
+     @throws IllegalArgumentException if this is a Data or RcData tag and the name cannot form a recognizable end tag
      @since 1.20.1
      */
     public Tag name(String tagName) {
+        if (is(RcData) || is(Data)) validateTextTagName(tagName);
         this.tagName = tagName;
-        this.normalName = ParseSettings.normalName(tagName);
+        this.normalName = asciiLowerCase(tagName);
+        setParserOptions();
         return this;
     }
 
@@ -124,7 +135,7 @@ public class Tag implements Cloneable {
     }
 
     /**
-     * Get this tag's normalized (lowercased) name.
+     * Get this tag's normalized name.
      * @return the tag's normal name.
      */
     public String normalName() {
@@ -147,6 +158,7 @@ public class Tag implements Cloneable {
      */
     public Tag namespace(String namespace) {
         this.namespace = namespace;
+        setParserOptions();
         return this;
     }
 
@@ -155,12 +167,24 @@ public class Tag implements Cloneable {
      <p>Once a tag has a setting applied, it will be considered a known tag.</p>
      @param option the option to set
      @return this tag
+     @throws IllegalArgumentException if setting Data or RcData on a tag whose name cannot form a recognizable end tag
      @since 1.20.1
      */
     public Tag set(int option) {
+        if ((option & (RcData | Data)) != 0) validateTextTagName(tagName);
         options |= option;
         options |= Tag.Known; // considered known if touched
         return this;
+    }
+
+    /** Ensures a text-mode tag has an unambiguous tokenizer end tag. */
+    private static void validateTextTagName(String name) {
+        boolean valid = !name.isEmpty() && StringUtil.isAsciiLetter(name.charAt(0));
+        for (int i = 0; valid && i < name.length(); i++) {
+            char c = name.charAt(i);
+            valid = c != '<' && c != '>' && c != '/' && c != '\0' && c != '\uFFFD' && !StringUtil.isWhitespace(c);
+        }
+        Validate.isTrue(valid, "Data and RcData tag names must start with an ASCII letter and contain no whitespace, '<', '>', '/', null, or replacement characters");
     }
 
     /**
@@ -185,6 +209,20 @@ public class Tag implements Cloneable {
         // considered known if touched, unless explicitly clearing known
         if (option != Tag.Known) options |= Tag.Known;
         return this;
+    }
+
+    /**
+     Set the cached parser options from the current name and namespace.
+     */
+    void setParserOptions() {
+        parserOptions = HtmlTagOptions.optionsFor(normalName, namespace);
+    }
+
+    /**
+     Test if this tag has the given parser option.
+     */
+    boolean hasParserOption(int option) {
+        return (parserOptions & option) != 0;
     }
 
     /**
@@ -239,16 +277,6 @@ public class Tag implements Cloneable {
      */
     public boolean isBlock() {
         return (options & Block) != 0;
-    }
-
-    /**
-     Get if this is an InlineContainer tag.
-
-     @return true if an InlineContainer (which formats children as inline).
-     @deprecated setting is only used within the Printer. Will be removed in a future release.
-     */
-    @Deprecated public boolean formatAsBlock() {
-        return (options & InlineContainer) != 0;
     }
 
     /**

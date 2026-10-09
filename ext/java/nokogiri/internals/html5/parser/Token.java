@@ -1,10 +1,17 @@
 package nokogiri.internals.html5.parser;
 
 import nokogiri.internals.html5.helper.Validate;
-import nokogiri.internals.html5.internal.Normalizer;
+import nokogiri.internals.html5.nodes.Attribute;
 import nokogiri.internals.html5.nodes.Attributes;
+import nokogiri.internals.html5.nodes.NodeInternals;
 import nokogiri.internals.html5.nodes.Range;
 import org.jspecify.annotations.Nullable;
+
+import java.util.Arrays;
+import java.util.Objects;
+
+import static nokogiri.internals.html5.internal.Normalizer.asciiLowerCase;
+import static nokogiri.internals.html5.internal.Normalizer.equalsIgnoreAsciiCase;
 
 /**
  * Parse tokens for the Tokeniser.
@@ -53,6 +60,8 @@ abstract class Token {
         @Nullable String pubSysKey = null;
         final TokenData publicIdentifier = new TokenData();
         final TokenData systemIdentifier = new TokenData();
+        final TokenData internalSubset = new TokenData();
+        boolean sawInternalSubset = false;
         boolean forceQuirks = false;
 
         Doctype() {
@@ -66,6 +75,8 @@ abstract class Token {
             pubSysKey = null;
             publicIdentifier.reset();
             systemIdentifier.reset();
+            internalSubset.reset();
+            sawInternalSubset = false;
             forceQuirks = false;
             return this;
         }
@@ -84,6 +95,14 @@ abstract class Token {
 
         public String getSystemIdentifier() {
             return systemIdentifier.value();
+        }
+
+        String getInternalSubset() {
+            return internalSubset.value();
+        }
+
+        boolean hasInternalSubset() {
+            return sawInternalSubset;
         }
 
         public boolean isForceQuirks() {
@@ -109,7 +128,11 @@ abstract class Token {
         // attribute source range tracking
         final TreeBuilder treeBuilder;
         final boolean trackSource;
+        private static final int AttrRangeWidth = 4;
         int attrNameStart, attrNameEnd, attrValStart, attrValEnd;
+        private @Nullable String @Nullable [] attrRangeNames;
+        private int @Nullable [] attrRangePositions;
+        private int attrRangeCount;
 
         Tag(TokenType type, TreeBuilder treeBuilder) {
             super(type);
@@ -124,6 +147,9 @@ abstract class Token {
             normalName = null;
             selfClosing = false;
             attributes = null;
+            if (attrRangeNames != null)
+                Arrays.fill(attrRangeNames, 0, attrRangeCount, null);
+            attrRangeCount = 0;
             resetPendingAttr();
             return this;
         }
@@ -147,9 +173,7 @@ abstract class Token {
                 attributes = new Attributes();
 
             if (attrName.hasData() && attributes.size() < MaxAttributes) {
-                // the tokeniser has skipped whitespace control chars, but trimming could collapse to empty for other control codes, so verify here
                 String name = attrName.value();
-                name = name.trim();
                 if (!name.isEmpty()) {
                     String value;
                     if (attrValue.hasData())
@@ -168,28 +192,95 @@ abstract class Token {
         }
 
         private void trackAttributeRange(String name) {
-            if (trackSource && isStartTag()) {
-                final StartTag start = asStartTag();
-                final CharacterReader r = start.treeBuilder.reader;
-                final boolean preserve = start.treeBuilder.settings.preserveAttributeCase();
-
-                assert attributes != null;
-                if (!preserve) name = Normalizer.lowerCase(name);
-                if (attributes.sourceRange(name).nameRange().isTracked()) return; // dedupe ranges as we go; actual attributes get deduped later for error count
-
+            if (treeBuilder.trackSourceRange && isStartTag()) {
                 // if there's no value (e.g. boolean), make it an implicit range at current
                 if (!attrValue.hasData()) attrValStart = attrValEnd = attrNameEnd;
 
-                Range.AttributeRange range = new Range.AttributeRange(
-                    new Range(
-                        new Range.Position(attrNameStart, r.lineNumber(attrNameStart), r.columnNumber(attrNameStart)),
-                        new Range.Position(attrNameEnd, r.lineNumber(attrNameEnd), r.columnNumber(attrNameEnd))),
-                    new Range(
-                        new Range.Position(attrValStart, r.lineNumber(attrValStart), r.columnNumber(attrValStart)),
-                        new Range.Position(attrValEnd, r.lineNumber(attrValEnd), r.columnNumber(attrValEnd)))
-                );
-                attributes.sourceRange(name, range);
+                addAttributeRange(name, attrNameStart, attrNameEnd, attrValStart, attrValEnd);
             }
+        }
+
+        /**
+         Stages an attribute range until the attributes are normalized and deduplicated.
+         */
+        private void addAttributeRange(String name, int nameStart, int nameEnd, int valueStart, int valueEnd) {
+            ensureAttributeRangeCapacity(attrRangeCount + 1);
+            assert attrRangeNames != null;
+            assert attrRangePositions != null;
+            attrRangeNames[attrRangeCount] = name;
+            int rangeIndex = attrRangeIndex(attrRangeCount);
+            attrRangePositions[rangeIndex] = nameStart;
+            attrRangePositions[rangeIndex + 1] = nameEnd;
+            attrRangePositions[rangeIndex + 2] = valueStart;
+            attrRangePositions[rangeIndex + 3] = valueEnd;
+            attrRangeCount++;
+        }
+
+        /**
+         Grows parser-local attribute range staging arrays.
+         */
+        private void ensureAttributeRangeCapacity(int minSize) {
+            if (attrRangeNames != null && attrRangeNames.length >= minSize)
+                return;
+            int size = attrRangeNames == null ? 3 : attrRangeNames.length * 2;
+            if (size < minSize)
+                size = minSize;
+            attrRangeNames = attrRangeNames == null ? new String[size] : Arrays.copyOf(attrRangeNames, size);
+            attrRangePositions = attrRangePositions == null ?
+                new int[size * AttrRangeWidth] :
+                Arrays.copyOf(attrRangePositions, size * AttrRangeWidth);
+        }
+
+        /**
+         Attaches staged attribute ranges after parser normalization and deduplication have settled attribute slots.
+         */
+        final void finaliseAttributeRanges(ParseSettings settings) {
+            if (!treeBuilder.trackSourceRange || attrRangeCount == 0 || attributes == null)
+                return;
+            assert attrRangeNames != null;
+            assert attrRangePositions != null;
+            int count = attrRangeCount;
+            attrRangeCount = 0;
+            for (int i = 0; i < count; i++) {
+                String stagedName = Objects.requireNonNull(attrRangeNames[i]);
+                String rangeName = rangeKey(stagedName, attributes, settings);
+                Range.AttributeRange existing = attributes.sourceRange(rangeName);
+                if (!existing.isTracked()) {
+                    int rangeIndex = attrRangeIndex(i);
+                    NodeInternals.attributeRange(
+                        attributes,
+                        rangeName,
+                        treeBuilder.lineMap(),
+                        attrRangePositions[rangeIndex],
+                        attrRangePositions[rangeIndex + 1],
+                        attrRangePositions[rangeIndex + 2],
+                        attrRangePositions[rangeIndex + 3]
+                    );
+                }
+                attrRangeNames[i] = null;
+            }
+        }
+
+        /**
+         Finds the retained attribute key after name normalization and deduplication.
+         */
+        private static String rangeKey(String stagedName, Attributes attributes, ParseSettings settings) {
+            if (settings.preserveAttributeCase()) return stagedName;
+            String key = asciiLowerCase(stagedName);
+            if (attributes.hasKey(key)) return key;
+            // SVG and MathML may have restored casing; use the surviving attribute's key
+            for (Attribute attribute : attributes) {
+                if (equalsIgnoreAsciiCase(attribute.getKey(), key))
+                    return attribute.getKey();
+            }
+            return key;
+        }
+
+        /**
+         Maps a staged attribute range to its first source offset slot.
+         */
+        private static int attrRangeIndex(int index) {
+            return index * AttrRangeWidth;
         }
 
         final boolean hasAttributes() {
@@ -225,7 +316,7 @@ abstract class Token {
 
         final Tag name(String name) {
             tagName.set(name);
-            normalName = ParseSettings.normalName(tagName.value());
+            normalName = asciiLowerCase(tagName.value());
             return this;
         }
 
@@ -238,7 +329,7 @@ abstract class Token {
             // might have null chars - need to replace with null replacement character
             append = append.replace(TokeniserState.nullChar, Tokeniser.replacementChar);
             tagName.append(append);
-            normalName = ParseSettings.normalName(tagName.value());
+            normalName = asciiLowerCase(tagName.value());
         }
 
         final void appendTagName(char append) {
@@ -313,7 +404,7 @@ abstract class Token {
         StartTag nameAttr(String name, Attributes attributes) {
             this.tagName.set(name);
             this.attributes = attributes;
-            normalName = ParseSettings.normalName(name);
+            normalName = asciiLowerCase(name);
             return this;
         }
 
@@ -338,7 +429,7 @@ abstract class Token {
         }
     }
 
-    final static class Comment extends Token {
+    static class Comment extends Token {
         private final TokenData data = new TokenData();
         boolean bogus = false;
 
@@ -376,6 +467,7 @@ abstract class Token {
 
     static class Character extends Token {
         final TokenData data = new TokenData();
+        boolean hasNull; // avoids rescanning text for nulls
 
         Character() {
             super(TokenType.Character);
@@ -387,22 +479,21 @@ abstract class Token {
             this.startPos = source.startPos;
             this.endPos = source.endPos;
             this.data.set(source.data.value());
+            this.hasNull = source.hasNull;
         }
 
         @Override
         Token reset() {
             super.reset();
             data.reset();
+            hasNull = false;
             return this;
         }
 
+        /** Sets arbitrary character data, including CDATA which may contain nulls. */
         Character data(String str) {
             data.set(str);
-            return this;
-        }
-
-        Character append(String str) {
-            data.append(str);
+            hasNull = str.indexOf(TokeniserState.nullChar) != -1;
             return this;
         }
 
@@ -419,13 +510,14 @@ abstract class Token {
          Normalize null chars in the data. If replace is true, replaces with the replacement char; if false, removes.
          */
         public void normalizeNulls(boolean replace) {
+            if (!hasNull) return;
             String data = this.data.value();
-            if (data.indexOf(TokeniserState.nullChar) == -1) return;
 
             data = (replace ?
                 data.replace(TokeniserState.nullChar, Tokeniser.replacementChar) :
                 data.replace(nullString, ""));
             this.data.set(data);
+            hasNull = false;
         }
 
         private static final String nullString = String.valueOf(TokeniserState.nullChar);
@@ -444,11 +536,34 @@ abstract class Token {
 
     }
 
-    /**
-     XmlDeclaration - extends Tag for pseudo attribute support
-     */
+    /** A processing instruction. Extends Comment to reuse its data buffer and tree-builder handling. */
+    final static class PI extends Comment {
+        final TokenData target = new TokenData();
+        int dataStartPos = UnsetPos;
+
+        /** Resets this token for reuse. */
+        @Override PI reset() {
+            super.reset();
+            target.reset();
+            dataStartPos = UnsetPos;
+            return this;
+        }
+
+        /** Returns the instruction target. */
+        String target() {
+            return target.value();
+        }
+
+        /** Formats this token as a processing instruction. */
+        @Override public String toString() {
+            String data = getData();
+            return "<?" + target() + (data.isEmpty() ? "" : " " + data) + "?>";
+        }
+    }
+
+    /** An XML or markup declaration. Extends Tag to reuse its name and attributes during tokenization. */
     final static class XmlDecl extends Tag {
-        boolean isDeclaration = true; // <!..>, or <?...?> if false (a processing instruction)
+        boolean isDeclaration = true; // <!name ...>, or <?xml ...?> if false
 
         public XmlDecl(TreeBuilder treeBuilder) {
             super(TokenType.XmlDecl, treeBuilder);
@@ -535,6 +650,16 @@ abstract class Token {
 
     final XmlDecl asXmlDecl() {
         return (XmlDecl) this;
+    }
+
+    /** Returns whether this token is a processing instruction. */
+    final boolean isPI() {
+        return this instanceof PI;
+    }
+
+    /** Returns this token as a processing instruction. */
+    final PI asPI() {
+        return (PI) this;
     }
 
     final boolean isEOF() {

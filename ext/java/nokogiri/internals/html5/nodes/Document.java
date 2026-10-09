@@ -2,7 +2,6 @@ package nokogiri.internals.html5.nodes;
 
 import java.nio.charset.Charset;
 
-import nokogiri.internals.html5.internal.StringUtil;
 import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Attr;
 import org.w3c.dom.CDATASection;
@@ -18,6 +17,8 @@ import org.w3c.dom.Text;
 
 import nokogiri.internals.html5.helper.DataUtil;
 import nokogiri.internals.html5.helper.Validate;
+import nokogiri.internals.html5.internal.QuietAppendable;
+import nokogiri.internals.html5.internal.StringUtil;
 import nokogiri.internals.html5.parser.ParseErrorList;
 import nokogiri.internals.html5.parser.ParseSettings;
 import nokogiri.internals.html5.parser.Parser;
@@ -131,19 +132,19 @@ public class Document extends Element implements org.w3c.dom.Document {
     @Override public DocumentType getDoctype() { return documentType(); }
     @Override public DOMImplementation getImplementation() { return implementation; }
     @Override public Element getDocumentElement() {
-      for (Node child : childNodes) {
-        if (child instanceof Element) {
-          return (Element) child;
+        for (Node child : childNodes) {
+            if (child instanceof Element) {
+                return (Element) child;
+            }
         }
-      }
-      return null;
+        return null;
     }
     // Element createElement(String tagName) throws DOMException
     @Override public DocumentFragment createDocumentFragment() {
-      nokogiri.internals.html5.nodes.DocumentFragment fragment = new nokogiri.internals.html5.nodes.DocumentFragment();
-      fragment.ownerDocument = this;
-      fragment.setBaseUri(baseUri());
-      return fragment;
+        nokogiri.internals.html5.nodes.DocumentFragment fragment = new nokogiri.internals.html5.nodes.DocumentFragment();
+        fragment.ownerDocument = this;
+        fragment.setBaseUri(baseUri());
+        return fragment;
     }
     @Override public Text createTextNode(String data) {
         TextNode node = new TextNode(data);
@@ -179,10 +180,10 @@ public class Document extends Element implements org.w3c.dom.Document {
         throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document's importNode will be implemented");
     }
     @Override public Element createElementNS(String namespaceURI, String qualifiedName) throws DOMException {
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented");
+        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document's createElementNS will be implemented");
     }
     @Override public Attr createAttributeNS(String namespaceURI, String qualifiedName) throws DOMException {
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented");
+        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document's createAttributeNS will be implemented");
     }
     @Override public org.w3c.dom.NodeList getElementsByTagNameNS(String namespaceURI, String localName) throws DOMException {
         return getElementsByTagName(localName);
@@ -203,53 +204,48 @@ public class Document extends Element implements org.w3c.dom.Document {
     @Override public String getDocumentURI() { return baseUri().equals("") ? null : baseUri().trim(); }
     @Override public void setDocumentURI(String documentURI) { /* does nothing */ }
     @Override public org.w3c.dom.Node adoptNode(org.w3c.dom.Node source) throws DOMException {
-      if (source.getNodeType() == org.w3c.dom.Node.DOCUMENT_NODE) {
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document nodes cannot be adopted.");
-      } else if (source.getNodeType() == org.w3c.dom.Node.DOCUMENT_TYPE_NODE) {
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document types cannot be adopted.");
-      } else if (source.getNodeType() == org.w3c.dom.Node.ENTITY_NODE) {
+        if (source.getNodeType() == org.w3c.dom.Node.DOCUMENT_NODE) {
+            throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document nodes cannot be adopted.");
+        } else if (source.getNodeType() == org.w3c.dom.Node.DOCUMENT_TYPE_NODE) {
+            throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "DocumentType nodes cannot be adopted.");
+        } else if (source.getNodeType() == org.w3c.dom.Node.ENTITY_NODE) { return null; }
+        else if (source.getNodeType() == org.w3c.dom.Node.ENTITY_REFERENCE_NODE) { return source;} // TODO: needs more work
+        else if (source.getNodeType() == org.w3c.dom.Node.NOTATION_NODE) { return null; }
+        if (!(source instanceof Node || source instanceof Attribute)) { return null; }
+        if (source.getNodeType() == org.w3c.dom.Node.ATTRIBUTE_NODE) {
+            Attribute attribute = (Attribute) source;
+            Attributes attributes = attribute.parent.ownerElement.attributes;
+            attributes.remove(attribute.getKey());
+            attribute.parent = null;
+            attribute.setOwnerDocument(this);
+            return attribute;
+        }
+        else if (source.getNodeType() == org.w3c.dom.Node.DOCUMENT_FRAGMENT_NODE ||
+                source.getNodeType() == org.w3c.dom.Node.ELEMENT_NODE) {
+            Node rootNode = (Node) source;
+            rootNode.traverse((node, depth) -> {
+                node.ownerDocument = this;
+                Attributes attributes = node.attributes();
+                for (int i = 0; i < attributes.getLength(); i++) {
+                    Attribute attributeAt = (Attribute) attributes.item(i);
+                    attributeAt.setOwnerDocument(this);
+                }
+            });
+            rootNode.parentNode.removeChildInner(rootNode);
+            rootNode.parentNode = null;
+            return rootNode;
+        }
+        else if (source.getNodeType() == org.w3c.dom.Node.PROCESSING_INSTRUCTION_NODE ||
+                source.getNodeType() == org.w3c.dom.Node.TEXT_NODE ||
+                source.getNodeType() == org.w3c.dom.Node.CDATA_SECTION_NODE ||
+                source.getNodeType() == org.w3c.dom.Node.COMMENT_NODE) {
+            Node node = (Node)source;
+            node.parentNode.removeChildInner(node);
+            node.parentNode = null;
+            node.ownerDocument = this;
+            return node;
+        }
         return null;
-      } else if (source.getNodeType() == org.w3c.dom.Node.ENTITY_REFERENCE_NODE) {
-        return (Node)source; // TODO: needs more work
-      } else if (source.getNodeType() == org.w3c.dom.Node.NOTATION_NODE) {
-        return null;
-      }
-
-      if (!(source instanceof Node || source instanceof Attribute)) { return null; }
-
-      if (source.getNodeType() == org.w3c.dom.Node.ATTRIBUTE_NODE) {
-        Attribute attribute = (Attribute)source;
-        Attributes attributes = attribute.parent.ownerElement.attributes;
-        attributes.remove(attribute.getKey());
-        attribute.parent = null;
-        attribute.setOwnerDocument(this);
-        return attribute;
-      } else if (source.getNodeType() == org.w3c.dom.Node.DOCUMENT_FRAGMENT_NODE ||
-        source.getNodeType() == org.w3c.dom.Node.ELEMENT_NODE) {
-        Node rootNode = (Node)source;
-        rootNode.traverse((node, depth) -> {
-          node.ownerDocument = this;
-          Attributes attributes = node.attributes();
-          for (int i = 0; i < attributes.getLength(); i++) {
-            Attribute attributeAt = (Attribute)attributes.item(i);
-            attributeAt.setOwnerDocument(this);
-          }
-        });
-        rootNode.parentNode.removeChildInner(rootNode);
-        rootNode.parentNode = null;
-        return rootNode;
-      } else if (source.getNodeType() == org.w3c.dom.Node.PROCESSING_INSTRUCTION_NODE ||
-        source.getNodeType() == org.w3c.dom.Node.TEXT_NODE ||
-        source.getNodeType() == org.w3c.dom.Node.CDATA_SECTION_NODE ||
-        source.getNodeType() == org.w3c.dom.Node.COMMENT_NODE) {
-        Node node = (Node)source;
-        node.ownerDocument = this;
-        node.parentNode.removeChildInner(node);
-        node.parentNode = null;
-        return node;
-      } else {
-        return null;
-      }
     }
     @Override public DOMConfiguration getDomConfig() { return configuration; }
     @Override public void normalizeDocument() { /* does nothing */ }
@@ -444,13 +440,19 @@ public class Document extends Element implements org.w3c.dom.Document {
                 parser.tagSet().valueOf(tagName, parser.defaultNamespace(), ParseSettings.preserveCase),
                 searchUpForAttribute(this, BaseUriKey)
         );
-        element.ownerDocument = this;
+        element.ownerDocument = this;  // org.w3c.dom
         return element;
     }
 
     @Override
     public String outerHtml() {
         return super.html(); // no outer wrapper tag
+    }
+
+    /** Append the HTML of this Document to the supplied {@link QuietAppendable}. */
+    @Override
+    protected void outerHtml(QuietAppendable accum) {
+        html(accum);
     }
 
     /**

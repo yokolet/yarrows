@@ -1,11 +1,11 @@
 package nokogiri.internals.html5.nodes;
 
-import nokogiri.internals.html5.helper.Validate;
-import nokogiri.internals.html5.internal.Normalizer;
-import nokogiri.internals.html5.internal.QuietAppendable;
-import nokogiri.internals.html5.internal.SharedConstants;
-import nokogiri.internals.html5.internal.StringUtil;
-import nokogiri.internals.html5.nodes.Document.OutputSettings.Syntax;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Objects;
+import java.util.regex.Pattern;
 
 import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Attr;
@@ -16,9 +16,12 @@ import org.w3c.dom.NodeList;
 import org.w3c.dom.TypeInfo;
 import org.w3c.dom.UserDataHandler;
 
-import java.io.IOException;
-import java.util.*;
-import java.util.regex.Pattern;
+import nokogiri.internals.html5.helper.Validate;
+import nokogiri.internals.html5.internal.Normalizer;
+import nokogiri.internals.html5.internal.QuietAppendable;
+import nokogiri.internals.html5.internal.SharedConstants;
+import nokogiri.internals.html5.internal.StringUtil;
+import nokogiri.internals.html5.nodes.Document.OutputSettings.Syntax;
 
 /**
  A single key + value attribute. (Only used for presentation.)
@@ -84,17 +87,17 @@ public class Attribute implements Cloneable, Attr  {
     @Override public Node getNextSibling() { return null; }
     @Override public NamedNodeMap getAttributes() { return null; };
     @Override public org.w3c.dom.Document getOwnerDocument() {
-      if (ownerDocument != null) {
-        return ownerDocument;
-      } else if (parent != null && parent.ownerElement != null) {
-        ownerDocument = (Document) parent.ownerElement.getOwnerDocument();
-        return ownerDocument;
-      } else {
-        return null;
-      }
+        if (ownerDocument != null) {
+            return ownerDocument;
+        } else if (parent != null && parent.ownerElement != null) {
+            ownerDocument = (Document) parent.ownerElement.getOwnerDocument();
+            return ownerDocument;
+        } else {
+            return null;
+        }
     }
     public void setOwnerDocument(Document ownerDocument) {
-      this.ownerDocument = ownerDocument;
+        this.ownerDocument = ownerDocument;
     }
     @Override public Node insertBefore(org.w3c.dom.Node newChild, org.w3c.dom.Node refChild) throws DOMException {
         throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented later");
@@ -108,7 +111,7 @@ public class Attribute implements Cloneable, Attr  {
         throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented later");
     }
     @Override public Node appendChild(org.w3c.dom.Node newChild) throws DOMException {
-        throw new DOMException(DOMException.HIERARCHY_REQUEST_ERR, "Attribute node is not allowed to have children");
+        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Attribute node doesn't have a child node");
     }
     @Override public boolean hasChildNodes() { return false; }
     @Override public Node cloneNode(boolean deep) { return clone(); }
@@ -218,7 +221,7 @@ public class Attribute implements Cloneable, Attr  {
     }
 
     @Override public String getName() { return getKey(); }
-    @Override public boolean getSpecified() {return specified; }
+    @Override public boolean getSpecified() { return specified; }
     public void setSpecified(boolean specified) { this.specified = specified; }
     // @Override public String getValue() { return val; } // exactly the same implementation exists
     // @Override void setValue(String value) throws DOMException { val = value; } // exactly the same implementation exists
@@ -240,20 +243,13 @@ public class Attribute implements Cloneable, Attr  {
      */
     public void setKey(String key) {
         Validate.notNull(key);
-        key = key.trim();
+        key = StringUtil.trimAsciiWhitespace(key);
         Validate.notEmpty(key); // trimming could potentially make empty, so validate here
         if (parent != null) {
             int i = parent.indexOfKey(this.key);
             if (i != Attributes.NotFound) {
-                String oldKey = parent.keys[i];
                 parent.keys[i] = key;
-
-                // if tracking source positions, update the key in the range map
-                Map<String, Range.AttributeRange> ranges = parent.getRanges();
-                if (ranges != null) {
-                    Range.AttributeRange range = ranges.remove(oldKey);
-                    ranges.put(key, range);
-                }
+                // Source ranges are index-aligned in the parent, so a key update keeps the same range.
             }
         }
         this.key = key;
@@ -291,7 +287,7 @@ public class Attribute implements Cloneable, Attr  {
             }
         }
         this.val = val;
-        //return Attributes.checkNotNull(oldVal);
+        //return Attributes.checkNotNull(oldVal); // to meet with org.w3c.dom API
     }
 
     /**
@@ -369,20 +365,7 @@ public class Attribute implements Cloneable, Attr  {
 
     static void html(String key, @Nullable String val, QuietAppendable accum, Document.OutputSettings out) {
         key = getValidKey(key, out.syntax());
-        if (key == null) return; // can't write it :(
         htmlNoValidate(key, val, accum, out);
-    }
-
-    /** @deprecated internal method and will be removed in a future version */
-    @Deprecated
-    protected void html(Appendable accum, Document.OutputSettings out) throws IOException {
-        html(key, val, accum, out);
-    }
-
-    /** @deprecated internal method and will be removed in a future version */
-    @Deprecated
-    protected static void html(String key, @Nullable String val, Appendable accum, Document.OutputSettings out) throws IOException {
-        html(key, val, QuietAppendable.wrap(accum), out);
     }
 
     static void htmlNoValidate(String key, @Nullable String val, QuietAppendable accum, Document.OutputSettings out) {
@@ -404,13 +387,13 @@ public class Attribute implements Cloneable, Attr  {
      * @return the original key if it's valid; a key with invalid characters replaced with "_" otherwise; or null if a valid key could not be created.
      */
     @Nullable public static String getValidKey(String key, Syntax syntax) {
+        if (key.isEmpty()) return "_";
         if (syntax == Syntax.xml && !isValidXmlKey(key)) {
             key = xmlKeyReplace.matcher(key).replaceAll("_");
-            return isValidXmlKey(key) ? key : null; // null if could not be coerced
-        }
-        else if (syntax == Syntax.html && !isValidHtmlKey(key)) {
+            if (!isValidXmlKeyStart(key.charAt(0)))
+                key = StringUtil.concat('_', key);
+        } else if (syntax == Syntax.html && !isValidHtmlKey(key)) {
             key = htmlKeyReplace.matcher(key).replaceAll("_");
-            return isValidHtmlKey(key) ? key : null; // null if could not be coerced
         }
         return key;
     }
@@ -422,14 +405,18 @@ public class Attribute implements Cloneable, Attr  {
         final int length = key.length();
         if (length == 0) return false;
         char c = key.charAt(0);
-        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == ':'))
-            return false;
+        if (!isValidXmlKeyStart(c)) return false;
         for (int i = 1; i < length; i++) {
             c = key.charAt(i);
             if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == ':' || c == '.'))
                 return false;
         }
         return true;
+    }
+
+    /** Check that the character can start an XML name */
+    private static boolean isValidXmlKeyStart(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == ':';
     }
 
     private static boolean isValidHtmlKey(String key) {

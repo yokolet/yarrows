@@ -1,17 +1,18 @@
 package nokogiri.internals.html5.parser;
 
 import nokogiri.internals.html5.helper.Validate;
-import nokogiri.internals.html5.internal.SharedConstants;
+import nokogiri.internals.html5.internal.LineMap;
 import nokogiri.internals.html5.nodes.Attributes;
 import nokogiri.internals.html5.nodes.Document;
 import nokogiri.internals.html5.nodes.Element;
 import nokogiri.internals.html5.nodes.Node;
-import nokogiri.internals.html5.nodes.Range;
+import nokogiri.internals.html5.nodes.NodeInternals;
 import nokogiri.internals.html5.select.NodeVisitor;
 import org.jspecify.annotations.Nullable;
 
 import java.io.Reader;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 import static nokogiri.internals.html5.parser.Parser.NamespaceHtml;
@@ -24,7 +25,7 @@ abstract class TreeBuilder {
     CharacterReader reader;
     Tokeniser tokeniser;
     Document doc; // current doc we are building into
-    ArrayList<Element> stack; // the stack of open elements
+    final ArrayList<Element> stack = new ArrayList<>(); // open elements only; the document is never on this stack
     String baseUri; // current base uri, for creating new elements
     Token currentToken; // currentToken is used for error and source position tracking. Null at start of fragment parse
     ParseSettings settings;
@@ -35,7 +36,9 @@ abstract class TreeBuilder {
     private final Token.EndTag end  = new Token.EndTag(this);
     abstract ParseSettings defaultSettings();
 
-    boolean trackSourceRange;  // optionally tracks the source range of nodes and attributes
+    boolean trackSourceRange; // optionally tracks source ranges of nodes and attributes
+    @Nullable LineMap lineMap; // shared line map for retained source ranges
+    private boolean parseComplete; // true only after EOF has closed the document
 
     void initialiseParse(Reader input, String baseUri, Parser parser) {
         Validate.notNullParam(input, "input");
@@ -48,10 +51,13 @@ abstract class TreeBuilder {
         settings = parser.settings();
         reader = new CharacterReader(input);
         trackSourceRange = parser.isTrackPosition();
-        reader.trackNewlines(parser.isTrackErrors() || trackSourceRange); // when tracking errors or source ranges, enable newline tracking for better legibility
+        reader.trackNewlines(parser.isTrackErrors() || trackSourceRange);
+        lineMap = trackSourceRange ? reader.lineMap() : null;
         if (parser.isTrackErrors()) parser.getErrors().clear();
         tokeniser = new Tokeniser(this);
-        stack = new ArrayList<>(32);
+        stack.clear();
+        stack.ensureCapacity(32);
+        parseComplete = false;
         tagSet = parser.tagSet();
         start = new Token.StartTag(this);
         currentToken = start; // init current token to the virtual start token.
@@ -59,13 +65,17 @@ abstract class TreeBuilder {
         onNodeInserted(doc);
     }
 
-    void completeParse() {
+    /** Closes the current input and releases parse resources without changing whether EOF was reached. */
+    void closeParse() {
         // tidy up - as the Parser and Treebuilder are retained in document for settings / fragments
         if (reader == null) return;
+        if (lineMap != null) lineMap.complete();
         reader.close();
         reader = null;
+        lineMap = null;
         tokeniser = null;
-        stack = null;
+        stack.clear();
+        stack.trimToSize();
     }
 
     Document parse(Reader input, String baseUri, Parser parser) {
@@ -79,6 +89,28 @@ abstract class TreeBuilder {
         initialiseParseFragment(context);
         runParser();
         return completeParseFragment();
+    }
+
+    /** Parses an attribute fragment with this builder's tokenizer. */
+    Attributes parseAttributes(Reader input, Parser parser) {
+        initialiseParse(input, "", parser);
+        try {
+            tokeniser.attributeFragment = true;
+            Token.Tag tag = tokeniser.createTagPending(true);
+            tokeniser.transition(TokeniserState.BeforeAttributeName);
+            tokeniser.read();
+            tag.finaliseTag();
+
+            Attributes attributes = tag.attributes;
+            if (attributes == null)
+                return new Attributes();
+            settings.normalizeAttributes(attributes);
+            attributes.deduplicate(settings);
+            tag.finaliseAttributeRanges(settings);
+            return attributes;
+        } finally {
+            closeParse();
+        }
     }
 
     void initialiseParseFragment(@Nullable Element context) {
@@ -100,27 +132,47 @@ abstract class TreeBuilder {
 
     void runParser() {
         do {} while (stepParser()); // run until stepParser sees EOF
-        completeParse();
+        closeParse();
     }
 
     boolean stepParser() {
+        if (parseComplete) return false;
+
         // if we have reached the end already, step by popping off the stack, to hit nodeRemoved callbacks:
         if (currentToken.type == Token.TokenType.EOF) {
-            if (stack == null) {
-                return false;
-            } if (stack.isEmpty()) {
+            if (stack.isEmpty()) {
                 onNodeClosed(doc); // the root doc is not on the stack, so let this final step close it
-                stack = null;
+                parseComplete = true;
                 return true;
             }
             pop();
             return true;
         }
-        final Token token = tokeniser.read();
+        final Token token = readToken();
         currentToken = token;
         process(token);
         token.reset();
         return true;
+    }
+
+    /** Returns the next token from the tokenizer. */
+    Token readToken() {
+        return tokeniser.read();
+    }
+
+    /** Return if we have reached EOF and completed the document tree. */
+    boolean isComplete() {
+        return parseComplete;
+    }
+
+    /** Check if the given Element is currently on the stack of open elements. */
+    boolean isOpen(Element element) {
+        return stack.contains(element);
+    }
+
+    /** Copies the currently open elements before a caller-initiated close clears the parser stack. */
+    void copyOpenElementsTo(Collection<? super Element> elements) {
+        elements.addAll(stack);
     }
 
     abstract boolean process(Token token);
@@ -198,14 +250,32 @@ abstract class TreeBuilder {
         return 512;
     }
 
+    /** The namespace used to process the current token. */
+    String currentElNs() {
+        return currentElement().tag().namespace();
+    }
+
     /**
-     Get the current element (last on the stack). If all items have been removed, returns the document instead
-     (which might not actually be on the stack; use stack.size() == 0 to test if required.
-     @return the last element on the stack, if any; or the root document
+     Gets the current open element for tree-construction decisions.
+     The stack must not be empty; use {@link #hasCurrentElement()} when it may be.
      */
     Element currentElement() {
-        int size = stack.size();
-        return size > 0 ? stack.get(size-1) : doc;
+        return stack.get(stack.size() - 1);
+    }
+
+    /**
+     Tests if there is a current open element.
+     */
+    boolean hasCurrentElement() {
+        return !stack.isEmpty();
+    }
+
+    /**
+     Gets the current open element, or the document when there is none.
+     This fallback is for generic node attachment; state-specific placement and foster parenting use explicit targets.
+     */
+    Element currentElOrDoc() {
+        return hasCurrentElement() ? currentElement() : doc;
     }
 
     /**
@@ -214,11 +284,7 @@ abstract class TreeBuilder {
      @return true if there is a current element on the stack, and its name equals the supplied
      */
     boolean currentElementIs(String normalName) {
-        if (stack.size() == 0)
-            return false;
-        Element current = currentElement();
-        return current != null && current.normalName().equals(normalName)
-            && current.tag().namespace().equals(NamespaceHtml);
+        return currentElementIs(normalName, NamespaceHtml);
     }
 
     /**
@@ -228,10 +294,10 @@ abstract class TreeBuilder {
      @return true if there is a current element on the stack, and its name equals the supplied
      */
     boolean currentElementIs(String normalName, String namespace) {
-        if (stack.size() == 0)
+        if (!hasCurrentElement())
             return false;
         Element current = currentElement();
-        return current != null && current.normalName().equals(normalName)
+        return current.normalName().equals(normalName)
             && current.tag().namespace().equals(namespace);
     }
 
@@ -299,6 +365,11 @@ abstract class TreeBuilder {
     void trackNodePosition(Node node, boolean isStart) {
         if (!trackSourceRange) return;
 
+        if (isStart && node.sourceRange().isTracked())
+            return; // recreated nodes retain the position of their originating token
+        if (!isStart && node instanceof Element && ((Element) node).endSourceRange().isTracked())
+            return; // an element's first close is its source close
+
         final Token token = currentToken;
         int startPos = token.startPos();
         int endPos = token.endPos();
@@ -307,8 +378,6 @@ abstract class TreeBuilder {
         if (node instanceof Element) {
             final Element el = (Element) node;
             if (token.isEOF()) {
-                if (el.endSourceRange().isTracked())
-                    return; // /body and /html are left on stack until EOF, don't reset them
                 startPos = endPos = reader.pos();
             } else if (isStart) { // opening tag
                 if  (!token.isStartTag() || !el.normalName().equals(token.asStartTag().normalName)) {
@@ -323,11 +392,17 @@ abstract class TreeBuilder {
             }
         }
 
-        Range.Position startPosition = new Range.Position
-            (startPos, reader.lineNumber(startPos), reader.columnNumber(startPos));
-        Range.Position endPosition = new Range.Position
-            (endPos, reader.lineNumber(endPos), reader.columnNumber(endPos));
-        Range range = new Range(startPosition, endPosition);
-        node.attributes().userData(isStart ? SharedConstants.RangeKey : SharedConstants.EndRangeKey, range);
+        if (isStart)
+            NodeInternals.sourceRange(node, lineMap(), startPos, endPos);
+        else if (node instanceof Element)
+            NodeInternals.endSourceRange((Element) node, lineMap(), startPos, endPos);
+    }
+
+    /**
+     Internal method, used by parser tokens to attach source ranges to Nodes and Attributes.
+     */
+    LineMap lineMap() {
+        assert lineMap != null;
+        return lineMap;
     }
 }

@@ -1,22 +1,5 @@
 package nokogiri.internals.html5.nodes;
 
-import nokogiri.internals.html5.helper.Validate;
-import nokogiri.internals.html5.internal.Normalizer;
-import nokogiri.internals.html5.internal.QuietAppendable;
-import nokogiri.internals.html5.internal.SharedConstants;
-import nokogiri.internals.html5.internal.StringUtil;
-import nokogiri.internals.html5.parser.ParseSettings;
-import nokogiri.internals.html5.parser.Parser;
-import nokogiri.internals.html5.parser.Tag;
-import nokogiri.internals.html5.select.Collector;
-import nokogiri.internals.html5.select.Elements;
-import nokogiri.internals.html5.select.Evaluator;
-import nokogiri.internals.html5.select.NodeFilter;
-import nokogiri.internals.html5.select.NodeVisitor;
-
-import org.jspecify.annotations.Nullable;
-import org.w3c.dom.*;
-
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -33,6 +16,27 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.jspecify.annotations.Nullable;
+import org.w3c.dom.Attr;
+import org.w3c.dom.DOMException;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.TypeInfo;
+
+import nokogiri.internals.html5.helper.Validate;
+import nokogiri.internals.html5.internal.QuietAppendable;
+import nokogiri.internals.html5.internal.SharedConstants;
+import nokogiri.internals.html5.internal.StringUtil;
+import nokogiri.internals.html5.parser.ParseSettings;
+import nokogiri.internals.html5.parser.Parser;
+import nokogiri.internals.html5.parser.Tag;
+import nokogiri.internals.html5.select.Collector;
+import nokogiri.internals.html5.select.Elements;
+import nokogiri.internals.html5.select.Evaluator;
+import nokogiri.internals.html5.select.NodeFilter;
+import nokogiri.internals.html5.select.NodeVisitor;
+
+import static nokogiri.internals.html5.internal.Normalizer.asciiLowerCase;
+import static nokogiri.internals.html5.nodes.Document.OutputSettings.Syntax.html;
 import static nokogiri.internals.html5.nodes.Document.OutputSettings.Syntax.xml;
 import static nokogiri.internals.html5.nodes.TextNode.lastCharIsWhitespace;
 import static nokogiri.internals.html5.parser.Parser.NamespaceHtml;
@@ -109,19 +113,19 @@ public class Element extends Node implements Iterable<Element>, org.w3c.dom.Elem
     @Override public NamedNodeMap getAttributes() { return attributes == null ? Node.EMPTY_MAP : attributes.getDOMAttributes(); }
     @Override public org.w3c.dom.Document getOwnerDocument() { return ownerDocument(); }
     @Override public Node appendChild(org.w3c.dom.Node newChild) throws DOMException {
-      if (newChild instanceof Element || newChild instanceof LeafNode) {
-        appendChild((Node) newChild);
-        return (Node) newChild;
-      } else if (newChild instanceof org.w3c.dom.Element) {
-        Node node = wrapElement((org.w3c.dom.Element) newChild);
-        appendChild(node);
-        return node;
-      } else if (newChild instanceof org.w3c.dom.CharacterData) {
-        Node node = wrapCharacterData((org.w3c.dom.CharacterData) newChild);
-        appendChild(node);
-        return node;
-      }
-      throw new DOMException(DOMException.HIERARCHY_REQUEST_ERR, "The given node cannot be appended to an Element");
+        if (newChild instanceof Element || newChild instanceof LeafNode) {
+            appendChild((Node) newChild);
+            return (Node) newChild;
+        } else if (newChild instanceof org.w3c.dom.Element) {
+            Node node = wrapElement((org.w3c.dom.Element) newChild);
+            appendChild(node);
+            return node;
+        } else if (newChild instanceof org.w3c.dom.CharacterData) {
+            Node node = wrapCharacterData((org.w3c.dom.CharacterData) newChild);
+            appendChild(node);
+            return node;
+        }
+        throw new DOMException(DOMException.HIERARCHY_REQUEST_ERR, "The given node can't be added as a child.");
     }
     @Override public Node cloneNode(boolean deep) {
         if (deep) { return this.clone(); }
@@ -213,34 +217,34 @@ public class Element extends Node implements Iterable<Element>, org.w3c.dom.Elem
         }
         return true;
     }
-    
+
     private Element wrapElement(org.w3c.dom.Element element) {
-      String namespaceURI = element.getNamespaceURI();
-      Tag tag = new Tag(element.getTagName(), namespaceURI == null ? NamespaceHtml : namespaceURI);
-      NamedNodeMap attrs = element.getAttributes();
-      Attributes attributes = new Attributes();
-      for (int i = 0; i < attrs.getLength(); i++) {
-        attributes.add(attrs.item(i).getNodeName(), attrs.item(i).getNodeValue());
-      }
-      Element wrappedElement = new Element(tag, element.getBaseURI() == null ? "" : element.getBaseURI(), attributes);
-      wrappedElement.foreignNode = element;
-      return wrappedElement;
+        String namespaceURI = element.getNamespaceURI();
+        Tag tag = new Tag(element.getTagName(), namespaceURI == null ? NamespaceHtml : namespaceURI);
+        NamedNodeMap attrs = element.getAttributes();
+        Attributes attributes = new Attributes();
+        for (int i = 0; i < attrs.getLength(); i++) {
+            attributes.add(attrs.item(i).getNodeName(), attrs.item(i).getNodeValue());
+        }
+        Element wrappedElement = new Element(tag, element.getBaseURI() == null ? "" : element.getBaseURI(), attributes);
+        wrappedElement.foreignNode = element;
+        return wrappedElement;
     }
 
     private LeafNode wrapCharacterData(org.w3c.dom.CharacterData characterData) {
-      String data = characterData.getData();
-      LeafNode leafNode = null;
-      if (characterData instanceof org.w3c.dom.CDATASection) {
-        leafNode = new CDataNode(data);
-      } else if (characterData instanceof org.w3c.dom.Comment) {
-        leafNode = new Comment(data);
-      } else if (characterData instanceof org.w3c.dom.Text) {
-        leafNode = new TextNode(data);
-      }
-      if (leafNode != null) {
-        leafNode.foreignNode = characterData;
-      }
-      return leafNode;
+        String data = characterData.getData();
+        LeafNode leafNode = null;
+        if (characterData instanceof org.w3c.dom.CDATASection) {
+            leafNode = new CDataNode(data);
+        } else if (characterData instanceof org.w3c.dom.Comment) {
+            leafNode = new Comment(data);
+        } else if (characterData instanceof org.w3c.dom.Text) {
+            leafNode = new TextNode(data);
+        }
+        if (leafNode != null) {
+            leafNode.foreignNode = characterData;
+        }
+        return leafNode;
     }
 
     /**
@@ -261,7 +265,7 @@ public class Element extends Node implements Iterable<Element>, org.w3c.dom.Elem
     public boolean hasAttributes() {
         if (attributes == null || attributes.getLength() == 0) { return false; }
         if (attributes.getLength() > 1 ) { return true; }
-        int index = attributes.indexOfKey(SharedConstants.UserDataKey);
+        int index = attributes.indexOfKey(SharedConstants.RangeSpansKey);
         return index == -1;
     }
 
@@ -1141,6 +1145,7 @@ public class Element extends Node implements Iterable<Element>, org.w3c.dom.Elem
     public Element append(String html) {
         Validate.notNull(html);
         List<Node> nodes = NodeUtils.parser(this).parseFragmentInput(html, this, baseUri());
+        // org.w3c.dom
         for (Node node : nodes) {
             if (node instanceof Element && ((Element) node).noNamespace) {
                 ((Element) node).tag().namespace(tag.namespace());
@@ -1431,14 +1436,15 @@ public class Element extends Node implements Iterable<Element>, org.w3c.dom.Elem
      */
     public Elements getElementsByTag(String tagName) {
         Validate.notEmpty(tagName);
-        tagName = Normalizer.normalize(tagName);
+        tagName = asciiLowerCase(StringUtil.trimAsciiWhitespace(tagName));
 
         return Collector.collect(new Evaluator.Tag(tagName), this);
     }
 
+    // org.w3c.dom
     public Elements getElementsByNamespaceAndTag(String namespace, String tagName) {
         Validate.notEmpty(tagName);
-        tagName = Normalizer.normalize(tagName);
+        tagName = asciiLowerCase(StringUtil.trimAsciiWhitespace(tagName));
         Elements elements = Collector.collect(new Evaluator.NamespaceAndTag(namespace, tagName), this);
         if (!elements.isEmpty() && elements.getFirst() == this) { elements.deselect(0); }
         return elements;
@@ -1697,7 +1703,7 @@ public class Element extends Node implements Iterable<Element>, org.w3c.dom.Elem
      *
      * @return all elements
      */
-    public Elements getAllElementsExceptSelf() {
+    public Elements getAllElementsExceptSelf() {  // org.w3c.dom
         Elements allElements = Collector.collect(new Evaluator.AllElements(), this);
         allElements.deselect(0);
         return allElements;
@@ -1738,9 +1744,8 @@ public class Element extends Node implements Iterable<Element>, org.w3c.dom.Elem
                 appendNormalisedText(accum, textNode);
             } else if (node instanceof Element) {
                 Element element = (Element) node;
-                if (accum.length() > 0 &&
-                    (element.isBlock() || element.nameIs("br")) &&
-                    !lastCharIsWhitespace(accum))
+                // add a synthetic space before leading blocks and readable boundaries when text would otherwise run together
+                if (accum.length() > 0 && needsLeadingTextSeparator(element) && !lastCharIsWhitespace(accum))
                     accum.append(' ');
             }
         }
@@ -1750,10 +1755,36 @@ public class Element extends Node implements Iterable<Element>, org.w3c.dom.Elem
             if (node instanceof Element) {
                 Element element = (Element) node;
                 Node next = node.nextSibling();
-                if (!element.tag.isInline() && (next instanceof TextNode || next instanceof Element && ((Element) next).tag.isInline()) && !lastCharIsWhitespace(accum))
+                if (needsTrailingTextSeparator(element) &&
+                        (next instanceof TextNode || next instanceof Element && ((Element) next).tag.isInline()) &&
+                        !lastCharIsWhitespace(accum))
                     accum.append(' ');
             }
 
+        }
+
+        /** check if an element should separate preceding text during text() */
+        private static boolean needsLeadingTextSeparator(Element element) {
+            return element.isBlock()
+                    || element.nameIs("br")
+                    || element.tag.is(Tag.TextBoundary) && element.childNodeSize() > 0 && element.hasText();
+        }
+
+        /** check if an element should separate following text during text() */
+        private static boolean needsTrailingTextSeparator(Element element) {
+            return element.tag.is(Tag.TextBoundary)
+                    || !element.tag.isInline()
+                    || hasBlockChild(element);
+        }
+
+        /** check if an inline wrapper contains direct block children and should close with a separator */
+        private static boolean hasBlockChild(Element element) {
+            for (int i = 0; i < element.childNodeSize(); i++) {
+                Node child = element.childNode(i);
+                if (child instanceof Element && ((Element) child).isBlock())
+                    return true;
+            }
+            return false;
         }
     }
 
@@ -2087,7 +2118,7 @@ public class Element extends Node implements Iterable<Element>, org.w3c.dom.Elem
      @since 1.15.2
      */
     public Range endSourceRange() {
-        return Range.of(this, false);
+        return Range.ofEnd(this);
     }
 
     @Override
@@ -2096,11 +2127,12 @@ public class Element extends Node implements Iterable<Element>, org.w3c.dom.Elem
         accum.append('<').append(tagName);
         if (attributes != null) attributes.html(accum, out);
 
-        if (childNodes.isEmpty()) {
+        boolean htmlVoid = out.syntax() == html && isHtmlVoid();
+        if (childNodes.isEmpty() || htmlVoid) {
             boolean xmlMode = out.syntax() == xml || !tag.namespace().equals(NamespaceHtml);
             if (xmlMode && (tag.is(Tag.SeenSelfClose) || (tag.isKnownTag() && (tag.isEmpty() || tag.isSelfClosing())))) {
                 accum.append(" />");
-            } else if (!xmlMode && tag.isEmpty()) { // html void element
+            } else if (htmlVoid) {
                 accum.append('>');
             } else {
                 accum.append("></").append(tagName).append('>');
@@ -2117,9 +2149,14 @@ public class Element extends Node implements Iterable<Element>, org.w3c.dom.Elem
         // if empty, we have already closed in htmlHead
     }
 
+    /** Tests if this element is an HTML-namespace void tag. */
+    boolean isHtmlVoid() {
+        return tag.namespace().equals(NamespaceHtml) && tag.isEmpty();
+    }
+
     /* If XML syntax, normalizes < to _ in tag name. */
     @Nullable private String safeTagName(Document.OutputSettings.Syntax syntax) {
-        return syntax == xml ? Normalizer.xmlSafeTagName(tagName()) : tagName();
+        return syntax == xml ? Attribute.getValidKey(tagName(), xml) : tagName();
     }
 
     /**
@@ -2137,16 +2174,22 @@ public class Element extends Node implements Iterable<Element>, org.w3c.dom.Elem
     }
 
     @Override
-    public <T extends Appendable> T html(T accum) {
+    public <T extends Appendable> T html(T appendable) {
+        html(QuietAppendable.wrap(appendable));
+        return appendable;
+    }
+
+    /** Append the inner HTML of this element to the supplied {@link QuietAppendable}. */
+    void html(QuietAppendable accum) {
+        if (NodeUtils.outputSettings(this).syntax() == html && isHtmlVoid()) return;
         Node child = firstChild();
         if (child != null) {
-            Printer printer = Printer.printerFor(child, QuietAppendable.wrap(accum));
+            Printer printer = Printer.printerFor(child, accum);
             while (child != null) {
                 printer.traverse(child);
                 child = child.nextSibling();
             }
         }
-        return accum;
     }
 
     /**

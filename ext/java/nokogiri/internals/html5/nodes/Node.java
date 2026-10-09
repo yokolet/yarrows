@@ -1,12 +1,5 @@
 package nokogiri.internals.html5.nodes;
 
-import org.jspecify.annotations.Nullable;
-import org.w3c.dom.DOMException;
-import org.w3c.dom.NamedNodeMap;
-import org.w3c.dom.NodeList;
-import org.w3c.dom.UserDataHandler;
-
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -16,6 +9,12 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
+
+import org.jspecify.annotations.Nullable;
+import org.w3c.dom.DOMException;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.NodeList;
+import org.w3c.dom.UserDataHandler;
 
 import nokogiri.internals.html5.helper.Validate;
 import nokogiri.internals.html5.internal.QuietAppendable;
@@ -92,7 +91,7 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
     }
     @Override public Node removeChild(org.w3c.dom.Node oldChild) throws DOMException {
         if (oldChild.getNodeType() == org.w3c.dom.Node.DOCUMENT_NODE) {
-          throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document node cannot be removed");
+            throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Document node cannot be removed");
         }
         removeChildInner((Node)oldChild);
         return (Node)oldChild;
@@ -153,8 +152,8 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
         throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented later");
     }
     @Override public boolean isSameNode(org.w3c.dom.Node other) {
-      if (foreignNode == null || other instanceof Node) { return this == other; }
-      else { return foreignNode == other; }
+        if (foreignNode == null || other instanceof Node) { return this == other; }
+        else { return foreignNode == other; }
     }
     public abstract String lookupPrefix(String namespaceURI);
     public abstract boolean isDefaultNamespace(String namespaceURI);
@@ -526,7 +525,7 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
      * @return the Document associated with this Node, or null if there is no such Document.
      */
     public @Nullable Document ownerDocument() {
-        if (ownerDocument != null) { return ownerDocument; }
+        if (ownerDocument != null) { return ownerDocument; }    // org.w3c.dom
         Node node = this;
         while (node != null) {
             if (node instanceof Document) {
@@ -567,6 +566,7 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
     public Node before(Node node) {
         Validate.notNull(node);
         Validate.notNull(parentNode);
+        if (node == this) return this;
 
         // if the incoming node is a sibling of this, remove it first so siblingIndex is correct on add
         if (node.parentNode == parentNode) node.remove();
@@ -595,6 +595,7 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
     public Node after(Node node) {
         Validate.notNull(node);
         Validate.notNull(parentNode);
+        if (node == this) return this;
 
         // if the incoming node is a sibling of this, remove it first so siblingIndex is correct on add
         if (node.parentNode == parentNode) node.remove();
@@ -701,10 +702,36 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
 
     protected void setParentNode(Node parentNode) {
         Validate.notNull(parentNode);
-        if (this.parentNode != null)
-            this.parentNode.removeChildInner(this);
         assert parentNode instanceof Element;
-        this.parentNode = (Element) parentNode;
+        parentNode.validateChild(this);
+        setParentNodeUnchecked((Element) parentNode);
+    }
+
+    /** Reparents this node without cycle validation; callers must validate first. */
+    private void setParentNodeUnchecked(Element parentNode) {
+        if (this.parentNode != null)
+            this.parentNode.removeChild(this);
+        this.parentNode = parentNode;
+    }
+
+    private static final String CycleError = "Cannot add a node here because it would create a cycle.";
+
+    /** Checks that the child is neither this node nor an ancestor of this node. */
+    private void validateChild(Node child) {
+        Validate.isFalse(child == this, CycleError);
+        if (child.childNodeSize() == 0) return;
+
+        for (Node ancestor = parentNode; ancestor != null; ancestor = ancestor.parentNode)
+            Validate.isFalse(ancestor == child, CycleError);
+    }
+
+    /** Checks every child before reparenting any of them. */
+    private void validateChildren(Node[] children) {
+        Validate.notNull(children);
+        for (Node child : children) {
+            Validate.notNull(child, "Array must not contain any null objects");
+            validateChild(child);
+        }
     }
 
     protected void replaceChildInner(Node out, Node in) {
@@ -712,16 +739,16 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
         Validate.notNull(in);
         if (out == in) return; // no-op self replacement
 
-        if (in.parentNode != null)
-            in.parentNode.removeChildInner(in);
+        Element parent = (Element) this;
+        validateChild(in);
+        in.setParentNodeUnchecked(parent);
 
         final int index = out.siblingIndex();
         ensureChildNodes().set(index, in);
-        in.parentNode = (Element) this;
         in.setSiblingIndex(index);
         out.parentNode = null;
 
-        ((Element) this).childNodes.incrementMod(); // as mod count not changed in set(), requires explicit update, to invalidate the child element cache
+        parent.childNodes.incrementMod(); // as mod count not changed in set(), requires explicit update, to invalidate the child element cache
     }
 
     protected void removeChildInner(Node out) {
@@ -738,10 +765,14 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
 
     protected void addChildren(Node... children) {
         //most used. short circuit addChildren(int), which hits reindex children and array copy
+        validateChildren(children);
+
         final List<Node> nodes = ensureChildNodes();
+        assert this instanceof Element;
+        Element parent = (Element) this;
 
         for (Node child: children) {
-            reparentChild(child);
+            child.setParentNodeUnchecked(parent);
             nodes.add(child);
             child.setSiblingIndex(nodes.size()-1);
         }
@@ -751,7 +782,11 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
         // todo clean up all these and use the list, not the var array. just need to be careful when iterating the incoming (as we are removing as we go)
         Validate.notNull(children);
         if (children.length == 0) return;
+        validateChildren(children);
+
         final List<Node> nodes = ensureChildNodes();
+        assert this instanceof Element;
+        Element parent = (Element) this;
 
         // fast path - if used as a wrap (index=0, children = child[0].parent.children - do inplace
         final Node firstParent = children[0].parent();
@@ -770,18 +805,16 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
                 firstParent.empty();
                 nodes.addAll(index, Arrays.asList(children));
                 i = children.length;
-                assert this instanceof Element;
                 while (i-- > 0) {
-                    children[i].parentNode = (Element) this;
+                    children[i].setParentNodeUnchecked(parent);
                 }
-                ((Element) this).invalidateChildren();
+                parent.invalidateChildren();
                 return;
             }
         }
 
-        Validate.noNullElements(children);
         for (Node child : children) {
-            reparentChild(child);
+            child.setParentNodeUnchecked(parent);
         }
         nodes.addAll(index, Arrays.asList(children));
         ((Element) this).invalidateChildren();
@@ -1010,8 +1043,21 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
         return StringUtil.releaseBuilder(sb);
     }
 
-    protected void outerHtml(Appendable accum) {
-        outerHtml(QuietAppendable.wrap(accum));
+    /**
+     Append the outer HTML of this node to the supplied {@link Appendable}. This includes the node itself; for example,
+     on a {@code p} element this appends {@code <p>Para</p>}. To append only an Element's contents, use
+     {@link Element#html(Appendable)}.
+
+     @param appendable the {@link Appendable} that will receive the HTML.
+     @return the supplied {@link Appendable}, for chaining.
+     @throws nokogiri.internals.html5.SerializationException if the appendable throws an IOException.
+     @see #outerHtml()
+     @see Element#html(Appendable)
+     @since 1.23.1
+     */
+    public <T extends Appendable> T outerHtml(T appendable) {
+        outerHtml(QuietAppendable.wrap(appendable));
+        return appendable;
     }
 
     protected void outerHtml(QuietAppendable accum) {
@@ -1053,7 +1099,22 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
      @since 1.15.2
      */
     public Range sourceRange() {
-        return Range.of(this, true);
+        return Range.ofStart(this);
+    }
+
+    /**
+     Gets the range spans, if source tracking was used.
+     */
+    Range.@Nullable Spans spans() {
+        if (!hasAttributes()) return null;
+        return attributes().spans();
+    }
+
+    /**
+     Gets or creates range spans for this node.
+     */
+    Range.Spans ensureSpans() {
+        return attributes().ensureSpans();
     }
 
     /**
@@ -1066,12 +1127,6 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
         return outerHtml();
     }
 
-    /** @deprecated internal method moved into Printer; will be removed in a future version */
-    @Deprecated
-    protected void indent(Appendable accum, int depth, Document.OutputSettings out) throws IOException {
-        accum.append('\n').append(StringUtil.padding(depth * out.indentAmount(), out.maxPaddingWidth()));
-    }
-
     /**
      * Check if this node is the same instance of another (object identity test).
      * <p>For a node value equality check, see {@link #hasSameValue(Object)}</p>
@@ -1082,9 +1137,9 @@ public abstract class Node implements org.w3c.dom.Node, Cloneable {
     @Override
     public boolean equals(@Nullable Object o) {
         // implemented just so that javadoc is clear this is an identity test
-      if (this == o)  return true;
-      if (foreignNode == o)  return true;
-      return false;
+        if (this == o) return true;
+        if (foreignNode == o) return true;  // org.w3c.dom
+        return false;
     }
 
     /**

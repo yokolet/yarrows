@@ -1,6 +1,7 @@
 package nokogiri.internals.html5.parser;
 
 import nokogiri.internals.html5.helper.Validate;
+import nokogiri.internals.html5.internal.LineMap;
 import nokogiri.internals.html5.internal.SoftPool;
 import nokogiri.internals.html5.internal.StringUtil;
 import org.jspecify.annotations.Nullable;
@@ -9,10 +10,9 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.io.Reader;
 import java.io.StringReader;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.Locale;
+
+import static nokogiri.internals.html5.internal.Normalizer.asciiLowerCase;
 
 /**
  CharacterReader consumes tokens off a string. Used internally by jsoup. API subject to changes.
@@ -41,8 +41,7 @@ public final class CharacterReader implements AutoCloseable {
 
     private static final SoftPool<char[]> BufferPool = new SoftPool<>(() -> new char[BufferSize]); // recycled char buffer
 
-    @Nullable private ArrayList<Integer> newlinePositions = null; // optionally track the pos() position of newlines - scans during bufferUp()
-    private int lineNumberOffset = 1; // line numbers start at 1; += newlinePosition[indexof(pos)]
+    @Nullable private LineMap lineMap = null; // optionally maps source offsets to line and column positions
 
     public CharacterReader(Reader input, int sz) {
         this(input); // sz is no longer used
@@ -74,6 +73,7 @@ public final class CharacterReader implements AutoCloseable {
             charBuf = null;
             StringPool.release(stringCache); // conversely, we don't clear the string cache, so we can reuse the contents
             stringCache = null;
+            lineMap = null;
         }
     }
 
@@ -119,7 +119,6 @@ public final class CharacterReader implements AutoCloseable {
         fillPoint = Math.min(bufLength, RefillPoint);
 
         scanBufferForNewlines(); // if enabled, we index newline positions for line number tracking
-        lastIcSeq = null; // cache for last containsIgnoreCase(seq)
     }
 
     void mark() {
@@ -148,12 +147,8 @@ public final class CharacterReader implements AutoCloseable {
      * @return current position
      */
     public int pos() {
-        return consumed + bufPos;
-    }
-
-    /** Tests if the buffer has been fully read. */
-    boolean readFully() {
-        return readFully;
+        // consuming EOF advances to a virtual position so it can be unconsumed; don't expose that beyond the input
+        return consumed + Math.min(bufPos, bufLength);
     }
 
     /**
@@ -165,12 +160,12 @@ public final class CharacterReader implements AutoCloseable {
      @since 1.14.3
      */
     public void trackNewlines(boolean track) {
-        if (track && newlinePositions == null) {
-            newlinePositions = new ArrayList<>(BufferSize / 80); // rough guess of likely count
+        if (track && lineMap == null) {
+            lineMap = new LineMap();
             scanBufferForNewlines(); // first pass when enabled; subsequently called during bufferUp
         }
         else if (!track)
-            newlinePositions = null;
+            lineMap = null;
     }
 
     /**
@@ -179,7 +174,15 @@ public final class CharacterReader implements AutoCloseable {
      @since 1.14.3
      */
     public boolean isTrackNewlines() {
-        return newlinePositions != null;
+        return lineMap != null;
+    }
+
+    /**
+     Get the line map enabled by {@link #trackNewlines(boolean)}.
+     */
+    LineMap lineMap() {
+        assert lineMap != null;
+        return lineMap;
     }
 
     /**
@@ -193,15 +196,10 @@ public final class CharacterReader implements AutoCloseable {
     }
 
     int lineNumber(int pos) {
-        // note that this impl needs to be called before the next buffer up or line numberoffset will be wrong. if that
-        // causes issues, can remove the reset of newlinepositions during buffer, at the cost of a larger tracking array
         if (!isTrackNewlines())
             return 1;
 
-        int i = lineNumIndex(pos);
-        if (i == -1)
-            return lineNumberOffset; // first line
-        return i + lineNumberOffset + 1;
+        return lineMap().lineNumber(pos);
     }
 
     /**
@@ -218,10 +216,7 @@ public final class CharacterReader implements AutoCloseable {
         if (!isTrackNewlines())
             return pos + 1;
 
-        int i = lineNumIndex(pos);
-        if (i == -1)
-          return pos + 1;
-        return pos - newlinePositions.get(i) + 1;
+        return lineMap().columnNumber(pos);
     }
 
     /**
@@ -235,33 +230,18 @@ public final class CharacterReader implements AutoCloseable {
         return lineNumber() + ":" + columnNumber();
     }
 
-    private int lineNumIndex(int pos) {
-        if (!isTrackNewlines()) return 0;
-        int i = Collections.binarySearch(newlinePositions, pos);
-        if (i < -1) i = Math.abs(i) - 2;
-        return i;
-    }
-
     /**
-     Scans the buffer for newline position, and tracks their location in newlinePositions.
+     Scans the buffer for newline positions and records line starts.
      */
     private void scanBufferForNewlines() {
         if (!isTrackNewlines())
             return;
 
-        if (newlinePositions.size() > 0) {
-            // work out the line number that we have read up to (as we have likely scanned past this point)
-            int index = lineNumIndex(consumed);
-            if (index == -1) index = 0; // first line
-            int linePos = newlinePositions.get(index);
-            lineNumberOffset += index; // the num lines we've read up to
-            newlinePositions.clear();
-            newlinePositions.add(linePos); // roll the last read pos to first, for cursor num after buffer
-        }
-
         for (int i = bufPos; i < bufLength; i++) {
-            if (charBuf[i] == '\n')
-                newlinePositions.add(1 + consumed + i);
+            if (charBuf[i] == '\n') {
+                int lineStart = 1 + consumed + i;
+                lineMap().addLineStart(lineStart);
+            }
         }
     }
 
@@ -427,41 +407,117 @@ public final class CharacterReader implements AutoCloseable {
     }
 
     /**
-     * Read characters until the first of any delimiters is found.
-     * @param chars delimiters to scan for
-     * @return characters read up to the matched delimiter.
+     Read characters until the first of any delimiters is found.
+     @param chars delimiters to scan for
+     @return characters read up to the matched delimiter.
      */
     public String consumeToAny(final char... chars) {
-        return consumeMatching(c -> { // seeks until we see one of the terminating chars
+        bufferUp();
+        int pos = bufPos;
+        final int start = pos;
+        final int remaining = bufLength;
+        final char[] val = charBuf;
+
+        scan:
+        while (pos < remaining) {
+            char c = val[pos];
             for (char seek : chars)
-                if (c == seek) return false;
-            return true;
-        });
+                if (c == seek) break scan;
+            pos++;
+        }
+
+        return consumeRange(start, pos);
+    }
+
+    /**
+     Read characters until either delimiter is found.
+     */
+    String consumeToAny(char c1, char c2) {
+        // monomorhpic to allow JIT to avoid virtual dispatch of e.g. consumeMatching(CharPredicate func)
+        bufferUp();
+        int pos = bufPos;
+        final int start = pos;
+        final int remaining = bufLength;
+        final char[] val = charBuf;
+
+        while (pos < remaining) {
+            char c = val[pos];
+            if (c == c1 || c == c2) break;
+            pos++;
+        }
+
+        return consumeRange(start, pos);
+    }
+
+    /**
+     Read characters until any delimiter is found.
+     */
+    String consumeToAny(char c1, char c2, char c3) {
+        bufferUp();
+        int pos = bufPos;
+        final int start = pos;
+        final int remaining = bufLength;
+        final char[] val = charBuf;
+
+        while (pos < remaining) {
+            char c = val[pos];
+            if (c == c1 || c == c2 || c == c3) break;
+            pos++;
+        }
+
+        return consumeRange(start, pos);
     }
 
     String consumeToAnySorted(final char... chars) {
-        return consumeMatching(c -> Arrays.binarySearch(chars, c) < 0); // matches until a hit
+        bufferUp();
+        int pos = bufPos;
+        final int start = pos;
+        final int remaining = bufLength;
+        final char[] val = charBuf;
+
+        while (pos < remaining && Arrays.binarySearch(chars, val[pos]) < 0) {
+            pos++;
+        }
+
+        return consumeRange(start, pos);
+    }
+
+    /** Read HTML whitespace. */
+    String consumeWhitespace() {
+        bufferUp();
+        int start = bufPos;
+        int pos = start;
+        while (pos < bufLength && StringUtil.isWhitespace(charBuf[pos])) pos++;
+        return consumeRange(start, pos);
     }
 
     String consumeData() {
         // consumes until &, <, null
-        return consumeMatching(c -> c != '&' && c != '<' && c != TokeniserState.nullChar);
+        return consumeToAny('&', '<', TokeniserState.nullChar);
     }
 
     String consumeAttributeQuoted(final boolean single) {
         // null, " or ', &
-        return consumeMatching(c -> c != TokeniserState.nullChar && c != '&' && (single ? c != '\'' : c != '"'));
+        char quote = single ? '\'' : '"';
+        return consumeToAny(TokeniserState.nullChar, '&', quote);
     }
 
     String consumeRawData() {
         // <, null
-        return consumeMatching(c -> c != '<' && c != TokeniserState.nullChar);
+        return consumeToAny('<', TokeniserState.nullChar);
     }
 
     String consumeTagName() {
         // '\t', '\n', '\r', '\f', ' ', '/', '>'
         // NOTE: out of spec; does not stop and append on nullChar but eats
-        return consumeMatching(c -> {
+        bufferUp();
+        int pos = bufPos;
+        final int start = pos;
+        final int remaining = bufLength;
+        final char[] val = charBuf;
+
+        while (pos < remaining) {
+            char c = val[pos];
             switch (c) {
                 case '\t':
                 case '\n':
@@ -470,10 +526,12 @@ public final class CharacterReader implements AutoCloseable {
                 case ' ':
                 case '/':
                 case '>':
-                    return false;
+                    return consumeRange(start, pos);
             }
-            return true;
-        });
+            pos++;
+        }
+
+        return consumeRange(start, pos);
     }
 
     String consumeToEnd() {
@@ -483,8 +541,9 @@ public final class CharacterReader implements AutoCloseable {
         return data;
     }
 
+    /** Consumes ASCII letters used by the HTML tokenizer's name states. */
     String consumeLetterSequence() {
-        return consumeMatching(Character::isLetter);
+        return consumeMatching(StringUtil::isAsciiLetter);
     }
 
     String consumeLetterThenDigitSequence() {
@@ -510,6 +569,14 @@ public final class CharacterReader implements AutoCloseable {
         return consumeMatching(c -> c >= '0' && c <= '9');
     }
 
+    /**
+     Complete a scan by moving the reader and returning the matched range.
+     */
+    private String consumeRange(int start, int pos) {
+        bufPos = pos;
+        return pos > start ? cacheString(charBuf, stringCache, start, pos - start) : "";
+    }
+
     boolean matches(char c) {
         return !isEmpty() && charBuf[bufPos] == c;
     }
@@ -526,19 +593,26 @@ public final class CharacterReader implements AutoCloseable {
         return true;
     }
 
+    /**
+     Checks if the current buffer position matches the sequence using ASCII case-insensitive matching.
+     */
     boolean matchesIgnoreCase(String seq) {
         bufferUp();
         int scanLength = seq.length();
         if (scanLength > bufLength - bufPos)
             return false;
 
-        for (int offset = 0; offset < scanLength; offset++) {
+        return rangeMatchesIgnoreCase(seq, bufPos);
+    }
+
+    private boolean rangeMatchesIgnoreCase(String seq, int start) {
+        for (int offset = 0; offset < seq.length(); offset++) {
             char scan = seq.charAt(offset);
-            char target = charBuf[bufPos + offset];
+            char target = charBuf[start + offset];
             if (scan == target) continue;
 
-            scan = Character.toUpperCase(scan);
-            target = Character.toUpperCase(target);
+            scan = asciiLowerCase(scan);
+            target = asciiLowerCase(target);
             if (scan != target) return false;
         }
         return true;
@@ -598,33 +672,6 @@ public final class CharacterReader implements AutoCloseable {
         } else {
             return false;
         }
-    }
-
-    // we maintain a cache of the previously scanned sequence, and return that if applicable on repeated scans.
-    // that improves the situation where there is a sequence of <p<p<p<p<p<p<p...</title> and we're bashing on the <p
-    // looking for the </title>. Resets in bufferUp()
-    @Nullable private String lastIcSeq; // scan cache
-    private int lastIcIndex; // nearest found indexOf
-
-    /** Used to check presence of </title>, </style> when we're in RCData and see a <xxx. Only finds consistent case. */
-    boolean containsIgnoreCase(String seq) {
-        if (seq.equals(lastIcSeq)) {
-            if (lastIcIndex == -1) return false;
-            if (lastIcIndex >= bufPos) return true;
-        }
-        lastIcSeq = seq;
-
-        String loScan = seq.toLowerCase(Locale.ENGLISH);
-        int lo = nextIndexOf(loScan);
-        if (lo > -1) {
-            lastIcIndex = bufPos + lo; return true;
-        }
-
-        String hiScan = seq.toUpperCase(Locale.ENGLISH);
-        int hi = nextIndexOf(hiScan);
-        boolean found = hi > -1;
-        lastIcIndex = found ? bufPos + hi : -1; // we don't care about finding the nearest, just that buf contains
-        return found;
     }
 
     @Override

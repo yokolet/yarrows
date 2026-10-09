@@ -1,6 +1,7 @@
 package nokogiri.internals.html5.nodes;
 
 import org.w3c.dom.DOMException;
+
 import nokogiri.internals.html5.internal.QuietAppendable;
 
 /**

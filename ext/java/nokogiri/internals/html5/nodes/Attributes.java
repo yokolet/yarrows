@@ -1,15 +1,5 @@
 package nokogiri.internals.html5.nodes;
 
-import nokogiri.internals.html5.helper.Validate;
-import nokogiri.internals.html5.internal.QuietAppendable;
-import nokogiri.internals.html5.internal.SharedConstants;
-import nokogiri.internals.html5.internal.StringUtil;
-import nokogiri.internals.html5.parser.ParseSettings;
-
-import org.jspecify.annotations.Nullable;
-import org.w3c.dom.DOMException;
-import org.w3c.dom.NamedNodeMap;
-
 import java.util.AbstractMap;
 import java.util.AbstractSet;
 import java.util.ArrayList;
@@ -17,6 +7,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.ConcurrentModificationException;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -24,8 +15,20 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
 
-import static nokogiri.internals.html5.internal.Normalizer.lowerCase;
-import static nokogiri.internals.html5.internal.SharedConstants.AttrRangeKey;
+import org.jspecify.annotations.Nullable;
+import org.w3c.dom.DOMException;
+import org.w3c.dom.NamedNodeMap;
+
+import nokogiri.internals.html5.helper.Validate;
+import nokogiri.internals.html5.internal.QuietAppendable;
+import nokogiri.internals.html5.internal.SharedConstants;
+import nokogiri.internals.html5.internal.StringUtil;
+import nokogiri.internals.html5.nodes.Document.OutputSettings.Syntax;
+import nokogiri.internals.html5.parser.ParseSettings;
+
+import static nokogiri.internals.html5.internal.Normalizer.asciiLowerCase;
+import static nokogiri.internals.html5.internal.Normalizer.equalsIgnoreAsciiCase;
+import static nokogiri.internals.html5.nodes.Document.OutputSettings.Syntax.xml;
 import static nokogiri.internals.html5.nodes.Range.AttributeRange.UntrackedAttr;
 
 /**
@@ -102,10 +105,10 @@ public class Attributes implements Iterable<Attribute>, Cloneable, NamedNodeMap 
         throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented later");
     }
     public NamedNodeMap getDOMAttributes() {
-        int index = indexOfKey(SharedConstants.UserDataKey);
+        int index = indexOfKey(SharedConstants.RangeSpansKey);
         if (index == NotFound) { return this; }
         Attributes attrs = this.clone();
-        attrs.removeNamedItem(SharedConstants.UserDataKey);
+        attrs.removeNamedItem(SharedConstants.RangeSpansKey);
         return attrs;
     }
 
@@ -132,10 +135,39 @@ public class Attributes implements Iterable<Attribute>, Cloneable, NamedNodeMap 
         return NotFound;
     }
 
+    /**
+     Finds a visible attribute's range index, skipping internal metadata slots.
+     */
+    int visibleIndexOfKey(String key) {
+        Validate.notNull(key);
+        int visible = 0;
+        for (int i = 0; i < size; i++) {
+            String attrKey = keys[i];
+            if (isInternalKey(attrKey))
+                continue;
+            if (key.equals(attrKey))
+                return visible;
+            visible++;
+        }
+        return NotFound;
+    }
+
+    /**
+     Maps an attribute array slot to the matching visible attribute index.
+     */
+    private int visibleIndex(int index) {
+        int visible = 0;
+        for (int i = 0; i < index; i++) {
+            if (!isInternalKey(keys[i]))
+                visible++;
+        }
+        return visible;
+    }
+
     private int indexOfKeyIgnoreCase(String key) {
         Validate.notNull(key);
         for (int i = 0; i < size; i++) {
-            if (key.equalsIgnoreCase(keys[i]))
+            if (equalsIgnoreAsciiCase(key, keys[i]))
                 return i;
         }
         return NotFound;
@@ -144,7 +176,7 @@ public class Attributes implements Iterable<Attribute>, Cloneable, NamedNodeMap 
     // we track boolean attributes as null in values - they're just keys. so returns empty for consumers
     // casts to String, so only for non-internal attributes
     static String checkNotNull(@Nullable Object val) {
-        return val == null ? EmptyString : (String) val;
+        return val instanceof String ? (String) val : EmptyString;
     }
 
     /**
@@ -219,6 +251,7 @@ public class Attributes implements Iterable<Attribute>, Cloneable, NamedNodeMap 
      arbitrary objects; use for source ranges, connecting W3C nodes to Elements, etc.
      * @return the map holding user-data
      */
+    @SuppressWarnings("unchecked")
     Map<String, Object> userData() {
         final Map<String, Object> userData;
         int i = indexOfKey(SharedConstants.UserDataKey);
@@ -272,6 +305,38 @@ public class Attributes implements Iterable<Attribute>, Cloneable, NamedNodeMap 
         return this;
     }
 
+    /**
+     Gets the range spans, if source tracking was used.
+     */
+    Range.@Nullable Spans spans() {
+        int i = indexOfKey(SharedConstants.RangeSpansKey);
+        return i == NotFound ? null : (Range.Spans) vals[i];
+    }
+
+    /**
+     Gets or creates the range spans for this attributes object.
+     */
+    Range.Spans ensureSpans() {
+        Range.Spans rangeSpans = spans();
+        if (rangeSpans == null) {
+            rangeSpans = new Range.Spans();
+            addObject(SharedConstants.RangeSpansKey, rangeSpans);
+        }
+        return rangeSpans;
+    }
+
+    /** Sets the leaf node's source ranges without discarding existing attribute ranges. */
+    void putSpans(Range.Spans rangeSpans) {
+        int i = indexOfKey(SharedConstants.RangeSpansKey);
+        if (i == NotFound) {
+            addObject(SharedConstants.RangeSpansKey, rangeSpans);
+        } else {
+            Range.Spans attributeSpans = (Range.Spans) vals[i];
+            rangeSpans.copyAttributeRanges(attributeSpans);
+            vals[i] = rangeSpans;
+        }
+    }
+
     void putIgnoreCase(String key, @Nullable String value) {
         int i = indexOfKeyIgnoreCase(key);
         if (i != NotFound) {
@@ -315,6 +380,11 @@ public class Attributes implements Iterable<Attribute>, Cloneable, NamedNodeMap 
     @SuppressWarnings("AssignmentToNull")
     private void remove(int index) {
         Validate.isFalse(index >= size);
+        Range.Spans rangeSpans = spans();
+        // Source ranges are stored by visible attribute index; internal metadata slots have no matching range record.
+        if (rangeSpans != null && !isInternalKey(keys[index]))
+            rangeSpans.removeAttributeRange(visibleIndex(index));
+
         int shifted = size - index - 1;
         if (shifted > 0) {
             System.arraycopy(keys, index + 1, keys, index, shifted);
@@ -440,38 +510,11 @@ public class Attributes implements Iterable<Attribute>, Cloneable, NamedNodeMap 
      @since 1.17.1
      */
     public Range.AttributeRange sourceRange(String key) {
-        if (!hasKey(key)) return UntrackedAttr;
-        Map<String, Range.AttributeRange> ranges = getRanges();
-        if (ranges == null) return Range.AttributeRange.UntrackedAttr;
-        Range.AttributeRange range = ranges.get(key);
-        return range != null ? range : Range.AttributeRange.UntrackedAttr;
+        int index = visibleIndexOfKey(key);
+        if (index == NotFound) return UntrackedAttr;
+        Range.Spans rangeSpans = spans();
+        return rangeSpans != null ? rangeSpans.attributeRange(index) : UntrackedAttr;
     }
-
-    /** Get the Ranges, if tracking is enabled; null otherwise. */
-    @Nullable Map<String, Range.AttributeRange> getRanges() {
-        //noinspection unchecked
-        return (Map<String, Range.AttributeRange>) userData(AttrRangeKey);
-    }
-
-    /**
-     Set the source ranges (start to end position) from which this attribute's <b>name</b> and <b>value</b> were parsed.
-     @param key the attribute name
-     @param range the range for the attribute's name and value
-     @return these attributes, for chaining
-     @since 1.18.2
-     */
-    public Attributes sourceRange(String key, Range.AttributeRange range) {
-        Validate.notNull(key);
-        Validate.notNull(range);
-        Map<String, Range.AttributeRange> ranges = getRanges();
-        if (ranges == null) {
-            ranges = new HashMap<>();
-            userData(AttrRangeKey, ranges);
-        }
-        ranges.put(key, range);
-        return this;
-    }
-
 
     @Override
     public Iterator<Attribute> iterator() {
@@ -556,15 +599,45 @@ public class Attributes implements Iterable<Attribute>, Cloneable, NamedNodeMap 
 
     final void html(final QuietAppendable accum, final Document.OutputSettings out) {
         final int sz = size;
+        final Syntax syntax = out.syntax();
+        @Nullable Set<String> usedKeys = null; // avoid allocation for normal serialization
         for (int i = 0; i < sz; i++) {
             String key = keys[i];
             assert key != null;
             if (isInternalKey(key))
                 continue;
-            final String validated = Attribute.getValidKey(key, out.syntax());
-            if (validated != null)
-                Attribute.htmlNoValidate(validated, (String) vals[i], accum.append(' '), out);
+            String validated = Attribute.getValidKey(key, syntax);
+            if (!validated.equals(key)) {
+                if (usedKeys == null)
+                    usedKeys = collectSourceKeys(syntax); // valid source names win regardless of attribute order
+                // preserve repaired attributes without outputting duplicate names
+                while (!usedKeys.add(comparisonKey(validated, syntax)))
+                    validated = StringUtil.concat('_', validated);
+            }
+            Attribute.htmlNoValidate(validated, (String) vals[i], accum.append(' '), out);
         }
+    }
+
+    /** Collects source keys so repaired names can be made unique without changing valid names. */
+    private Set<String> collectSourceKeys(Syntax syntax) {
+        Set<String> sourceKeys = new HashSet<>(size);
+        for (int i = 0; i < size; i++) {
+            String key = keys[i];
+            assert key != null;
+            if (!isInternalKey(key))
+                sourceKeys.add(comparisonKey(key, syntax));
+        }
+        return sourceKeys;
+    }
+
+    /** Normalizes a key for the output syntax's case sensitivity. */
+    private static String comparisonKey(String key, Syntax syntax) {
+        return syntax == xml ? key : asciiLowerCase(key);
+    }
+
+    /** Compares keys with the requested case sensitivity. */
+    private static boolean keysEqual(String first, String second, boolean caseSensitive) {
+        return caseSensitive ? first.equals(second) : equalsIgnoreAsciiCase(first, second);
     }
 
     @Override
@@ -584,13 +657,20 @@ public class Attributes implements Iterable<Attribute>, Cloneable, NamedNodeMap 
         if (o == null || getClass() != o.getClass()) return false;
 
         Attributes that = (Attributes) o;
-        if (size != that.size) return false;
+        if (size() != that.size()) return false;
         for (int i = 0; i < size; i++) {
             String key = keys[i];
             assert key != null;
-            int thatI = that.indexOfKey(key);
-            if (thatI == NotFound || !Objects.equals(vals[i], that.vals[thatI]))
-                return false;
+            if (isInternalKey(key)) continue;
+
+            int here = 0, there = 0;
+            for (int j = 0; j < size; j++) {
+                if (key.equals(keys[j]) && Objects.equals(vals[i], vals[j])) here++;
+            }
+            for (int j = 0; j < that.size; j++) {
+                if (key.equals(that.keys[j]) && Objects.equals(vals[i], that.vals[j])) there++;
+            }
+            if (here != there) return false;
         }
         return true;
     }
@@ -601,9 +681,13 @@ public class Attributes implements Iterable<Attribute>, Cloneable, NamedNodeMap 
      */
     @Override
     public int hashCode() {
-        int result = size;
-        result = 31 * result + Arrays.hashCode(keys);
-        result = 31 * result + Arrays.hashCode(vals);
+        int result = 0;
+        for (int i = 0; i < size; i++) {
+            String key = keys[i];
+            assert key != null;
+            if (!isInternalKey(key))
+                result += 31 * key.hashCode() + Objects.hashCode(vals[i]);
+        }
         return result;
     }
 
@@ -622,8 +706,13 @@ public class Attributes implements Iterable<Attribute>, Cloneable, NamedNodeMap 
         // make a copy of the user data map. (Contents are shallow).
         int i = indexOfKey(SharedConstants.UserDataKey);
         if (i != NotFound) {
-            //noinspection unchecked
-            vals[i] = new HashMap<>((Map<String, Object>) vals[i]);
+            clone.vals[i] = new HashMap<>((Map<String, Object>) vals[i]);
+        }
+
+        // make a copy of the range spans, if present.
+        i = indexOfKey(SharedConstants.RangeSpansKey);
+        if (i != NotFound) {
+            clone.vals[i] = ((Range.Spans) vals[i]).copy();
         }
 
         return clone;
@@ -638,7 +727,7 @@ public class Attributes implements Iterable<Attribute>, Cloneable, NamedNodeMap 
             String key = keys[i];
             assert key != null;
             if (!isInternalKey(key))
-                keys[i] = lowerCase(key);
+                keys[i] = asciiLowerCase(key);
         }
     }
 
@@ -655,7 +744,7 @@ public class Attributes implements Iterable<Attribute>, Cloneable, NamedNodeMap 
             String keyI = keys[i];
             assert keyI != null;
             for (int j = i + 1; j < size; j++) {
-                if ((preserve && keyI.equals(keys[j])) || (!preserve && keyI.equalsIgnoreCase(keys[j]))) {
+                if (keysEqual(keyI, keys[j], preserve)) {
                     dupes++;
                     remove(j);
                     j--;

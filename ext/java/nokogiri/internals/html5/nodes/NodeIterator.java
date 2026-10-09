@@ -1,10 +1,11 @@
 package nokogiri.internals.html5.nodes;
 
-import nokogiri.internals.html5.helper.Validate;
-import org.jspecify.annotations.Nullable;
-
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+
+import org.jspecify.annotations.Nullable;
+
+import nokogiri.internals.html5.helper.Validate;
 
 /**
  Iterate through a Node and its tree of descendants, in document order, and returns nodes of the specified type. This

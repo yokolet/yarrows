@@ -1,9 +1,9 @@
 package nokogiri.internals.html5.nodes;
 
-import nokogiri.internals.html5.parser.Tag;
-import nokogiri.internals.html5.select.Elements;
 import org.jspecify.annotations.Nullable;
 
+import nokogiri.internals.html5.parser.Tag;
+import nokogiri.internals.html5.select.Elements;
 
 /**
  * An HTML Form Element provides ready access to the form fields/controls that are associated with it. It also allows a

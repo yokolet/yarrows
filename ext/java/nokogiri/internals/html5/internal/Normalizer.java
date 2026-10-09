@@ -16,6 +16,35 @@ public final class Normalizer {
         return input != null ? input.toLowerCase(Locale.ROOT) : "";
     }
 
+    /** Lowercases ASCII letters. */
+    public static String asciiLowerCase(final @Nullable String input) {
+        if (input == null) return "";
+        char[] chars = null;
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            char lower = asciiLowerCase(c);
+            if (c != lower) {
+                if (chars == null) chars = input.toCharArray(); // set up on first change
+                chars[i] = lower;
+            }
+        }
+        return chars == null ? input : new String(chars);
+    }
+
+    /** Lowercases an ASCII letter. */
+    public static char asciiLowerCase(char c) {
+        return c >= 'A' && c <= 'Z' ? (char) (c + ('a' - 'A')) : c;
+    }
+
+    /** Compares strings ignoring ASCII case. */
+    public static boolean equalsIgnoreAsciiCase(String first, @Nullable String second) {
+        if (second == null || first.length() != second.length()) return false;
+        for (int i = 0; i < first.length(); i++) {
+            if (asciiLowerCase(first.charAt(i)) != asciiLowerCase(second.charAt(i))) return false;
+        }
+        return true;
+    }
+
     /** Lower-cases and trims the input string. */
     public static String normalize(final String input) {
         return lowerCase(input).trim();
