@@ -249,8 +249,39 @@ public class Document extends Element implements org.w3c.dom.Document {
     }
     @Override public DOMConfiguration getDomConfig() { return configuration; }
     @Override public void normalizeDocument() { /* does nothing */ }
-    @Override public Node renameNode(org.w3c.dom.Node n, String namespaceURI, String qualifiedName) throws DOMException {
-        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Will be implemented");
+    @Override public org.w3c.dom.Node renameNode(org.w3c.dom.Node n, String namespaceURI, String qualifiedName) throws DOMException {
+      if (!(n.getNodeType() == org.w3c.dom.Node.ELEMENT_NODE || n.getNodeType() == org.w3c.dom.Node.ATTRIBUTE_NODE)) {
+        throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Only element or attribute nodes can be renamed.");
+      }
+      if (n.getOwnerDocument() != this) {
+        throw new DOMException(DOMException.WRONG_DOCUMENT_ERR, "The given node is not a part of this document.");
+      }
+      if (n.getNodeType() == org.w3c.dom.Node.ELEMENT_NODE) {
+        Element element = (Element) n;
+        if (namespaceURI == null || namespaceURI.equals(element.getNamespaceURI())) {
+          element.tag.name(qualifiedName);
+          return element;
+        } else {
+          Element renamed = new Element(qualifiedName, namespaceURI);
+          renamed.ownerDocument = this;
+          renamed.attributes = element.attributes;
+          renamed.childNodes = element.childNodes;
+          element.parentNode.replaceChildInner(element, renamed);
+          return renamed;
+        }
+      } else if (n.getNodeType() == org.w3c.dom.Node.ATTRIBUTE_NODE) {
+        // As for an Attr type, namespace change is not supported.
+        Attribute attribute = (Attribute) n;
+        if (namespaceURI != null && !namespaceURI.equals(attribute.getNamespaceURI())) {
+          throw new DOMException(DOMException.NOT_SUPPORTED_ERR, "Namespace change is not supported for an attribute");
+        }
+        Attributes attributes = attribute.getOwnerElement().attributes;
+        int index = attributes.indexOfKey(attribute.getKey());
+        if (index < 0) throw new DOMException(DOMException.NAMESPACE_ERR, "Attribute key " + attribute.getKey() + " not found.");
+        attributes.keys[index] = qualifiedName;
+        return attributes.attribute(qualifiedName);
+      }
+      return null;
     }
 
     protected boolean areSameInDetail(org.w3c.dom.Node arg) {
