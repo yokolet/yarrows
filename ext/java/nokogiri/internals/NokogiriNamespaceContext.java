@@ -45,6 +45,8 @@ public final class NokogiriNamespaceContext implements NamespaceContext
     register.put(NOKOGIRI_BUILTIN_PREFIX, NOKOGIRI_BUILTIN_URI);
     register.put("xml", "http://www.w3.org/XML/1998/namespace");
     register.put("xhtml", "http://www.w3.org/1999/xhtml");
+    register.put("math", "http://www.w3.org/1998/Math/MathML");
+    register.put("svg", "http://www.w3.org/2000/svg");
   }
 
   public String
