@@ -325,6 +325,16 @@ class TestHtml5API < Nokogiri::TestCase
     refute_nil(Nokogiri::HTML5.parse(ascii_8bit))
   end
 
+  def test_doctype_node
+    doc = Nokogiri::HTML5.parse("<!DOCTYPE html><html></html>")
+    dtd = doc.children.first
+
+    assert_kind_of(Nokogiri::XML::DTD, dtd)
+    assert_equal("html", dtd.name)
+    assert_same(doc, dtd.document)
+    assert_equal("html", doc.internal_subset.name)
+  end
+
   def test_fragment_from_node
     doc = Nokogiri.HTML5("<!DOCTYPE html><form><span></span></form>")
     span = doc.at_xpath("/html/body/form/span")
