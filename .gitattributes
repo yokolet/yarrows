@@ -1,0 +1,2 @@
+# Generated list of known JRuby failures; collapse it in GitHub diffs. See the file header for how to regenerate it.
+test/html5/jruby_known_failures.txt linguist-generated=true

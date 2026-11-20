@@ -5,6 +5,29 @@ require "English"
 require "helper"
 
 class TestHtml5TreeConstructionBase < Nokogiri::TestCase
+  # JRuby's HTML5 support is a work in progress. Tests listed in this file are expected to fail
+  # on JRuby; see the file's header for the format and how to regenerate it.
+  JRUBY_KNOWN_FAILURES_PATH = File.expand_path("jruby_known_failures.txt", __dir__)
+
+  class << self
+    # Map of "TestClass#test_name" => :tree (the tree is wrong) or :errors (the tree is right,
+    # but the reported parse errors are wrong).
+    def jruby_known_failures
+      @jruby_known_failures ||= begin
+        known = {}
+        if Nokogiri.jruby? && File.exist?(JRUBY_KNOWN_FAILURES_PATH)
+          File.foreach(JRUBY_KNOWN_FAILURES_PATH, chomp: true) do |line|
+            next if line.empty? || line.start_with?("#")
+
+            id, kind = line.split(" ", 2)
+            known[id] = kind == "errors" ? :errors : :tree
+          end
+        end
+        known
+      end
+    end
+  end
+
   def assert_equal_or_nil(exp, act)
     if exp.nil?
       assert_nil(act)
@@ -70,6 +93,57 @@ class TestHtml5TreeConstructionBase < Nokogiri::TestCase
   end
 
   def run_test
+    return record_jruby_known_failure(ENV["NOKOGIRI_RECORD_JRUBY_KNOWN_FAILURES"]) if ENV["NOKOGIRI_RECORD_JRUBY_KNOWN_FAILURES"]
+
+    known = TestHtml5TreeConstructionBase.jruby_known_failures["#{self.class.name}##{name}"]
+
+    doc = expect_known_failure(known == :tree, "tree") { parse_and_compare_tree }
+    expect_known_failure(known, "errors") { compare_errors(doc) }
+    return unless known
+
+    flunk("#{self.class.name}##{name} now passes on JRuby; remove it from #{File.basename(JRUBY_KNOWN_FAILURES_PATH)}")
+  end
+
+  # Appends this test's entry to `path` if it fails, ignoring the existing list. Used to regenerate the list.
+  def record_jruby_known_failure(path)
+    pass # tests that raise before their first assertion would otherwise fail with "missing assertions"
+    id = "#{self.class.name}##{name}"
+    doc = begin
+      parse_and_compare_tree
+    rescue Interrupt, SystemExit, NoMemoryError
+      raise
+    rescue Exception # rubocop:disable Lint/RescueException
+      return File.write(path, "#{id}\n", mode: "a")
+    end
+    begin
+      compare_errors(doc)
+    rescue Interrupt, SystemExit, NoMemoryError
+      raise
+    rescue Exception # rubocop:disable Lint/RescueException
+      File.write(path, "#{id} errors\n", mode: "a")
+    end
+  end
+
+  # When the step is known to fail, run it anyway: skip if it fails, so the test
+  # is reported as a known failure, and flunk if it unexpectedly passes, so the list shrinks over time.
+  def expect_known_failure(known, step)
+    return yield unless known
+
+    begin
+      result = yield
+    rescue Interrupt, SystemExit, NoMemoryError
+      raise
+    rescue Exception => e # rubocop:disable Lint/RescueException -- includes Java exceptions raised by the JRuby extension
+      skip("Known JRuby #{step} failure (listed in #{File.basename(JRUBY_KNOWN_FAILURES_PATH)}): #{e.message.lines.first&.strip}")
+    end
+    if step == "tree"
+      flunk("#{self.class.name}##{name}: the tree is now correct on JRuby; change its entry in " \
+        "#{File.basename(JRUBY_KNOWN_FAILURES_PATH)} to `errors`, or remove it if the errors are also correct")
+    end
+    result
+  end
+
+  def parse_and_compare_tree
     options = {
       max_errors: -1,
       parse_noscript_content_as_text: @test_script_on,
@@ -125,8 +199,10 @@ class TestHtml5TreeConstructionBase < Nokogiri::TestCase
       act_nodes << act_child
       children << 0
     end
+    doc
+  end
 
-    # Test the errors.
+  def compare_errors(doc)
     errpayload = doc.errors.join("\n")
     assert_equal(
       @test[:errors].length,
@@ -376,4 +452,4 @@ module Html5libTestCaseParser
   end
 end
 
-Html5libTestCaseParser.generate_tests if Nokogiri.uses_gumbo?
+Html5libTestCaseParser.generate_tests if Nokogiri.uses_gumbo? || Nokogiri.jruby?
